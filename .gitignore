@@ -3,3 +3,7 @@ build/
 dist/
 *.spec
 __pycache__/
+
+## NO BORRAR LAS SIGUIENTES LINEAS ##
+/SECOM_Project/SECOM_Persistence/src/main/resources/config.properties
+/SECOM_Project/SECOM_Persistence/target
