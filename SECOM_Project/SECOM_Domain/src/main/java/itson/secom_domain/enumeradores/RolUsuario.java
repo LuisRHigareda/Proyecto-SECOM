@@ -10,4 +10,8 @@ package itson.secom_domain.enumeradores;
  */
 public enum RolUsuario {
     
+    CLIENTE,
+    VENDEDOR,
+    ADMIN
+    
 }
