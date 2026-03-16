@@ -4,6 +4,7 @@
  */
 package itson.secom_domain;
 
+import itson.secom_domain.enumeradores.EstatusPedido;
 import java.time.LocalDate;
 
 /**
@@ -15,7 +16,7 @@ public class Compra {
     private int id;
     private LocalDate fecha;
     private LocalDate fechaEntregaEstimada;
-    private String estatusPedido;
+    private EstatusPedido estatusPedido;
 
     private Proyecto proyecto;
 
@@ -23,7 +24,7 @@ public class Compra {
     }
 
     public Compra(int id, LocalDate fecha, LocalDate fechaEntregaEstimada,
-            String estatusPedido, Proyecto proyecto) {
+            EstatusPedido estatusPedido, Proyecto proyecto) {
         this.id = id;
         this.fecha = fecha;
         this.fechaEntregaEstimada = fechaEntregaEstimada;
@@ -55,11 +56,11 @@ public class Compra {
         this.fechaEntregaEstimada = fechaEntregaEstimada;
     }
 
-    public String getEstatusPedido() {
+    public EstatusPedido getEstatusPedido() {
         return estatusPedido;
     }
 
-    public void setEstatusPedido(String estatusPedido) {
+    public void setEstatusPedido(EstatusPedido estatusPedido) {
         this.estatusPedido = estatusPedido;
     }
 

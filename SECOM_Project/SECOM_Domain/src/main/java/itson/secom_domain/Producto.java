@@ -4,6 +4,8 @@
  */
 package itson.secom_domain;
 
+import itson.secom_domain.enumeradores.CategoriaProducto;
+
 /**
  *
  * @author Serva
@@ -12,7 +14,7 @@ public class Producto {
 
     private int id;
     private String nombre;
-    private String categoria;
+    private CategoriaProducto categoria;
     private String espesificaciones;
     private double precioUnitario;
     private int stock;
@@ -20,7 +22,7 @@ public class Producto {
     public Producto() {
     }
 
-    public Producto(int id, String nombre, String categoria,
+    public Producto(int id, String nombre, CategoriaProducto categoria,
             String espesificaciones, double precioUnitario, int stock) {
         this.id = id;
         this.nombre = nombre;
@@ -46,11 +48,11 @@ public class Producto {
         this.nombre = nombre;
     }
 
-    public String getCategoria() {
+    public CategoriaProducto getCategoria() {
         return categoria;
     }
 
-    public void setCategoria(String categoria) {
+    public void setCategoria(CategoriaProducto categoria) {
         this.categoria = categoria;
     }
 

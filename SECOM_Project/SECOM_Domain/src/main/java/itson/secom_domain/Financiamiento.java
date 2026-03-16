@@ -4,6 +4,10 @@
  */
 package itson.secom_domain;
 
+import itson.secom_domain.enumeradores.EstatusFinanciamiento;
+import itson.secom_domain.enumeradores.MedioCobroFinanciamiento;
+import itson.secom_domain.enumeradores.TipoFinanciamiento;
+
 /**
  *
  * @author Serva
@@ -12,10 +16,10 @@ public class Financiamiento {
 
     private int id;
     private String folio;
-    private String tipo;
-    private String medioCobro;
+    private TipoFinanciamiento tipo;
+    private MedioCobroFinanciamiento medioCobro;
     private double montoFinanciado;
-    private String estatus;
+    private EstatusFinanciamiento estatus;
     private String financiadoPor;
 
     private Proyecto proyecto;
@@ -23,8 +27,8 @@ public class Financiamiento {
     public Financiamiento() {
     }
 
-    public Financiamiento(int id, String folio, String tipo, String medioCobro,
-            double montoFinanciado, String estatus,
+    public Financiamiento(int id, String folio, TipoFinanciamiento tipo, MedioCobroFinanciamiento medioCobro,
+            double montoFinanciado, EstatusFinanciamiento estatus,
             String financiadoPor, Proyecto proyecto) {
         this.id = id;
         this.folio = folio;
@@ -52,19 +56,19 @@ public class Financiamiento {
         this.folio = folio;
     }
 
-    public String getTipo() {
+    public TipoFinanciamiento getTipo() {
         return tipo;
     }
 
-    public void setTipo(String tipo) {
+    public void setTipo(TipoFinanciamiento tipo) {
         this.tipo = tipo;
     }
 
-    public String getMedioCobro() {
+    public MedioCobroFinanciamiento getMedioCobro() {
         return medioCobro;
     }
 
-    public void setMedioCobro(String medioCobro) {
+    public void setMedioCobro(MedioCobroFinanciamiento medioCobro) {
         this.medioCobro = medioCobro;
     }
 
@@ -76,11 +80,11 @@ public class Financiamiento {
         this.montoFinanciado = montoFinanciado;
     }
 
-    public String getEstatus() {
+    public EstatusFinanciamiento getEstatus() {
         return estatus;
     }
 
-    public void setEstatus(String estatus) {
+    public void setEstatus(EstatusFinanciamiento estatus) {
         this.estatus = estatus;
     }
 

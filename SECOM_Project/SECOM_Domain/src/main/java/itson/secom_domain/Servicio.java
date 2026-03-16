@@ -4,6 +4,8 @@
  */
 package itson.secom_domain;
 
+import itson.secom_domain.enumeradores.EstadoServicio;
+import itson.secom_domain.enumeradores.TipoServicio;
 import java.time.LocalDate;
 
 /**
@@ -13,18 +15,18 @@ import java.time.LocalDate;
 public class Servicio {
 
     private int id;
-    private String tipo;
+    private TipoServicio tipo;
     private LocalDate fecha;
     private String descripcion;
-    private String estado;
+    private EstadoServicio estado;
 
     private Proyecto proyecto;
 
     public Servicio() {
     }
 
-    public Servicio(int id, String tipo, LocalDate fecha,
-            String descripcion, String estado, Proyecto proyecto) {
+    public Servicio(int id, TipoServicio tipo, LocalDate fecha,
+            String descripcion, EstadoServicio estado, Proyecto proyecto) {
         this.id = id;
         this.tipo = tipo;
         this.fecha = fecha;
@@ -41,11 +43,11 @@ public class Servicio {
         this.id = id;
     }
 
-    public String getTipo() {
+    public TipoServicio getTipo() {
         return tipo;
     }
 
-    public void setTipo(String tipo) {
+    public void setTipo(TipoServicio tipo) {
         this.tipo = tipo;
     }
 
@@ -65,11 +67,11 @@ public class Servicio {
         this.descripcion = descripcion;
     }
 
-    public String getEstado() {
+    public EstadoServicio getEstado() {
         return estado;
     }
 
-    public void setEstado(String estado) {
+    public void setEstado(EstadoServicio estado) {
         this.estado = estado;
     }
 
