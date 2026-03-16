@@ -10,11 +10,11 @@ package itson.secom_domain;
  */
 public class Usuario {
 
-    private int id;
+    private int idUsuario;
     private String userName;
     private String contrasena;
     private String correoElectronico;
-    private String estado;
+    private boolean esActivo;
     private Rol tipoUsuario;
 
     public Usuario() {
@@ -22,21 +22,21 @@ public class Usuario {
     }
 
     public Usuario(int id, String userName, String contrasena,
-            String correoElectronico, String estado, Rol tipoUsuario) {
-        this.id = id;
+            String correoElectronico, boolean esActivo, Rol tipoUsuario) {
+        this.idUsuario = id;
         this.userName = userName;
         this.contrasena = contrasena;
         this.correoElectronico = correoElectronico;
-        this.estado = estado;
+        this.esActivo = esActivo;
         this.tipoUsuario = tipoUsuario;
     }
 
-    public int getId() {
-        return id;
+    public int getIdUsuario() {
+        return idUsuario;
     }
 
-    public void setId(int id) {
-        this.id = id;
+    public void setIdUsuario(int id) {
+        this.idUsuario = id;
     }
 
     public String getUserName() {
@@ -63,12 +63,22 @@ public class Usuario {
         this.correoElectronico = correoElectronico;
     }
 
-    public String getEstado() {
-        return estado;
+    /**
+     * Obtiene si el estado de un usuario es activo o no.
+     *
+     * @return True si esta activo. False en caso contrario.
+     */
+    public boolean esActivo() {
+        return esActivo;
     }
 
-    public void setEstado(String estado) {
-        this.estado = estado;
+    /**
+     * Establece si un usuario esta activo o no.
+     *
+     * @param estado True si esta activo, Falso en caso contrario.
+     */
+    public void setEstado(boolean estado) {
+        this.esActivo = estado;
     }
 
     public Rol getTipoUsuario() {
@@ -82,10 +92,10 @@ public class Usuario {
     @Override
     public String toString() {
         return "Usuario{"
-                + "id=" + id
+                + "id=" + idUsuario
                 + ", userName='" + userName + '\''
                 + ", correoElectronico='" + correoElectronico + '\''
-                + ", estado='" + estado + '\''
+                + ", estado='" + esActivo + '\''
                 + ", tipoUsuario=" + (tipoUsuario != null ? tipoUsuario.getTipoRol() : "null")
                 + '}';
     }
