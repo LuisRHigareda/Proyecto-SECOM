@@ -4,6 +4,8 @@
  */
 package itson.secom_domain;
 
+import itson.secom_domain.enumeradores.RolUsuario;
+
 /**
  *
  * @author Serva
@@ -15,20 +17,20 @@ public class Usuario {
     private String contrasena;
     private String correoElectronico;
     private boolean esActivo;
-    private Rol tipoUsuario;
+    private RolUsuario rolUsuario;
 
     public Usuario() {
 
     }
 
     public Usuario(int id, String userName, String contrasena,
-            String correoElectronico, boolean esActivo, Rol tipoUsuario) {
+            String correoElectronico, boolean esActivo, RolUsuario rolUsuario) {
         this.idUsuario = id;
         this.userName = userName;
         this.contrasena = contrasena;
         this.correoElectronico = correoElectronico;
         this.esActivo = esActivo;
-        this.tipoUsuario = tipoUsuario;
+        this.rolUsuario = rolUsuario;
     }
 
     public int getIdUsuario() {
@@ -81,12 +83,12 @@ public class Usuario {
         this.esActivo = estado;
     }
 
-    public Rol getTipoUsuario() {
-        return tipoUsuario;
+    public RolUsuario getRolUsuario() {
+        return rolUsuario;
     }
 
-    public void setTipoUsuario(Rol tipoUsuario) {
-        this.tipoUsuario = tipoUsuario;
+    public void setRolUsuario(RolUsuario rolUsuario) {
+        this.rolUsuario = rolUsuario;
     }
 
     @Override
@@ -96,7 +98,7 @@ public class Usuario {
                 + ", userName='" + userName + '\''
                 + ", correoElectronico='" + correoElectronico + '\''
                 + ", estado='" + esActivo + '\''
-                + ", tipoUsuario=" + (tipoUsuario != null ? tipoUsuario.getTipoRol() : "null")
+                + ", tipoUsuario=" + rolUsuario.name()
                 + '}';
     }
 }
