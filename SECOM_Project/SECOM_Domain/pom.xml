@@ -9,7 +9,7 @@
     <artifactId>SECOM_Domain</artifactId>
     <packaging>jar</packaging>
     <properties>
-        <maven.compiler.release>23</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <exec.mainClass>itson.secom_domain.SECOM_Domain</exec.mainClass>
     </properties>
 </project>
