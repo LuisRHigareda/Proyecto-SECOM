@@ -8,6 +8,8 @@
     <modules>
         <module>SECOM_Persistence</module>
         <module>SECOM_Domain</module>
+        <module>SECOM_Negocio</module>
+        <module>SECOM_PruebaCRUD</module>
     </modules>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

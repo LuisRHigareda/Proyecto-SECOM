@@ -5,8 +5,10 @@
 package itson.secom_persistence.conexionFactory;
 
 import itson.secom_persistence.IConnectionBD;
+import itson.secom_persistence.ICotizacionDAO;
 import itson.secom_persistence.connectionDB.ConnectionDB;
 import itson.secom_persistence.implementacion.ClientesDAO;
+import itson.secom_persistence.implementacion.CotizacionDAO;
 
 /**
  *
@@ -33,7 +35,13 @@ public class DAOFactory {
     public ClientesDAO conexcionClientesDAO() {
         return new ClientesDAO(conexion);
     }
-    
+    /**
+     * Crea la factory para la conexion con CotizacionDAO
+     * @return Conexion con CotizacionDAO
+     */
+    public ICotizacionDAO conexionCotizacionDAO() {
+        return new CotizacionDAO(conexion);
+    }
 
     /**
      *
