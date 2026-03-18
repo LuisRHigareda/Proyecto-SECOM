@@ -8,23 +8,21 @@ package itson.secom_domain;
  *
  * @author Serva
  */
-public class Cliente extends Usuario{
+public class Cliente extends Usuario {
 
     private int idCliente;
     private String nombreCompleto;
     private String telefono;
-    private String correoElectronico;
     private String direccion;
 
     public Cliente() {
     }
 
     public Cliente(int id, String nombreCompleto, String telefono,
-            String correoElectronico, String direccion) {
+            String direccion) {
         this.idCliente = id;
         this.nombreCompleto = nombreCompleto;
         this.telefono = telefono;
-        this.correoElectronico = correoElectronico;
         this.direccion = direccion;
     }
 
@@ -52,14 +50,6 @@ public class Cliente extends Usuario{
         this.telefono = telefono;
     }
 
-    public String getCorreoElectronico() {
-        return correoElectronico;
-    }
-
-    public void setCorreoElectronico(String correoElectronico) {
-        this.correoElectronico = correoElectronico;
-    }
-
     public String getDireccion() {
         return direccion;
     }
@@ -74,7 +64,6 @@ public class Cliente extends Usuario{
                 + "id=" + idCliente
                 + ", nombreCompleto='" + nombreCompleto + '\''
                 + ", telefono='" + telefono + '\''
-                + ", correoElectronico='" + correoElectronico + '\''
                 + ", direccion='" + direccion + '\''
                 + '}';
     }

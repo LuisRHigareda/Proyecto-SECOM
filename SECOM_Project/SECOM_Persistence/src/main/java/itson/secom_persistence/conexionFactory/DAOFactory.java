@@ -6,6 +6,7 @@ package itson.secom_persistence.conexionFactory;
 
 import itson.secom_persistence.IConnectionBD;
 import itson.secom_persistence.connectionDB.ConnectionDB;
+import itson.secom_persistence.implementacion.ClientesDAO;
 
 /**
  *
@@ -25,6 +26,14 @@ public class DAOFactory {
         this.conexion = new ConnectionDB(esPrueba);
     }
     
+    /**
+     * Crea la factory para la conexcion con ClientesDAO
+     * @return Conexcion con ClientesDAO
+     */
+    public ClientesDAO conexcionClientesDAO() {
+        return new ClientesDAO(conexion);
+    }
+    
 
     /**
      *
@@ -42,7 +51,9 @@ public class DAOFactory {
      * }
      * 
      * 
-     * Se llamaria de la siguiente manera para utilizarse:
+     * Se llamaria de la siguiente manera para utilizarse
+     * (por ejemplo en capa de Negocio):
+     * 
      * (seria ture si fuera de prueba)
      * DAOFactory factory = new DAOFactory(false);
      *
