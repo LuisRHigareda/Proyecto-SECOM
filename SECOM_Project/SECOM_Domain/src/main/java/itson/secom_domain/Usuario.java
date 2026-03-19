@@ -5,6 +5,8 @@
 package itson.secom_domain;
 
 import itson.secom_domain.enumeradores.RolUsuario;
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  *
@@ -14,31 +16,49 @@ public class Usuario {
 
     private int idUsuario;
     private String userName;
-    private String contrasena;
-    private String correoElectronico;
-    private boolean esActivo;
+    private String nombre;
+    private String email;
+    private String password;
     private RolUsuario rolUsuario;
+    private List<String> telefono;
+    private String ciudad;
+    private boolean esActivo;
+    private LocalDateTime fechaRegistro;
 
     public Usuario() {
-
     }
 
-    public Usuario(int id, String userName, String contrasena,
-            String correoElectronico, boolean esActivo, RolUsuario rolUsuario) {
-        this.idUsuario = id;
+    public Usuario(int idUsuario, String userName, String nombre, String email, String password, RolUsuario rolUsuario, List<String> telefono, String ciudad, boolean esActivo, LocalDateTime fechaRegistro) {
+        this.idUsuario = idUsuario;
         this.userName = userName;
-        this.contrasena = contrasena;
-        this.correoElectronico = correoElectronico;
-        this.esActivo = esActivo;
+        this.nombre = nombre;
+        this.email = email;
+        this.password = password;
         this.rolUsuario = rolUsuario;
+        this.telefono = telefono;
+        this.ciudad = ciudad;
+        this.esActivo = esActivo;
+        this.fechaRegistro = fechaRegistro;
+    }
+
+    public Usuario(String userName, String nombre, String email, String password, RolUsuario rolUsuario, List<String> telefono, String ciudad, boolean esActivo, LocalDateTime fechaRegistro) {
+        this.userName = userName;
+        this.nombre = nombre;
+        this.email = email;
+        this.password = password;
+        this.rolUsuario = rolUsuario;
+        this.telefono = telefono;
+        this.ciudad = ciudad;
+        this.esActivo = esActivo;
+        this.fechaRegistro = fechaRegistro;
     }
 
     public int getIdUsuario() {
         return idUsuario;
     }
 
-    public void setIdUsuario(int id) {
-        this.idUsuario = id;
+    public void setIdUsuario(int idUsuario) {
+        this.idUsuario = idUsuario;
     }
 
     public String getUserName() {
@@ -49,38 +69,28 @@ public class Usuario {
         this.userName = userName;
     }
 
-    public String getContrasena() {
-        return contrasena;
+    public String getNombre() {
+        return nombre;
     }
 
-    public void setContrasena(String contrasena) {
-        this.contrasena = contrasena;
+    public void setNombre(String nombre) {
+        this.nombre = nombre;
     }
 
-    public String getCorreoElectronico() {
-        return correoElectronico;
+    public String getEmail() {
+        return email;
     }
 
-    public void setCorreoElectronico(String correoElectronico) {
-        this.correoElectronico = correoElectronico;
+    public void setEmail(String email) {
+        this.email = email;
     }
 
-    /**
-     * Obtiene si el estado de un usuario es activo o no.
-     *
-     * @return True si esta activo. False en caso contrario.
-     */
-    public boolean esActivo() {
-        return esActivo;
+    public String getPassword() {
+        return password;
     }
 
-    /**
-     * Establece si un usuario esta activo o no.
-     *
-     * @param estado True si esta activo, Falso en caso contrario.
-     */
-    public void setEstado(boolean estado) {
-        this.esActivo = estado;
+    public void setPassword(String password) {
+        this.password = password;
     }
 
     public RolUsuario getRolUsuario() {
@@ -91,14 +101,41 @@ public class Usuario {
         this.rolUsuario = rolUsuario;
     }
 
+    public List<String> getTelefono() {
+        return telefono;
+    }
+
+    public void setTelefono(List<String> telefono) {
+        this.telefono = telefono;
+    }
+
+    public String getCiudad() {
+        return ciudad;
+    }
+
+    public void setCiudad(String ciudad) {
+        this.ciudad = ciudad;
+    }
+
+    public boolean isEsActivo() {
+        return esActivo;
+    }
+
+    public void setEsActivo(boolean esActivo) {
+        this.esActivo = esActivo;
+    }
+
+    public LocalDateTime getFechaRegistro() {
+        return fechaRegistro;
+    }
+
+    public void setFechaRegistro(LocalDateTime fechaRegistro) {
+        this.fechaRegistro = fechaRegistro;
+    }
+
     @Override
     public String toString() {
-        return "Usuario{"
-                + "id=" + idUsuario
-                + ", userName='" + userName + '\''
-                + ", correoElectronico='" + correoElectronico + '\''
-                + ", estado='" + esActivo + '\''
-                + ", tipoUsuario=" + rolUsuario.name()
-                + '}';
+        return "Usuario{" + "idUsuario=" + idUsuario + ", userName=" + userName + ", nombre=" + nombre + ", email=" + email + ", password=" + password + ", rolUsuario=" + rolUsuario + ", telefono=" + telefono + ", ciudad=" + ciudad + ", esActivo=" + esActivo + ", fechaRegistro=" + fechaRegistro + '}';
     }
+
 }

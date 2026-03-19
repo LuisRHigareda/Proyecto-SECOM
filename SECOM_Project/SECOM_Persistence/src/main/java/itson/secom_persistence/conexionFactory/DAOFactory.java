@@ -5,7 +5,10 @@
 package itson.secom_persistence.conexionFactory;
 
 import itson.secom_persistence.IConnectionBD;
+import itson.secom_persistence.ICotizacionDAO;
 import itson.secom_persistence.connectionDB.ConnectionDB;
+import itson.secom_persistence.implementacion.ClientesDAO;
+import itson.secom_persistence.implementacion.CotizacionDAO;
 
 /**
  *
@@ -25,6 +28,20 @@ public class DAOFactory {
         this.conexion = new ConnectionDB(esPrueba);
     }
     
+    /**
+     * Crea la factory para la conexcion con ClientesDAO
+     * @return Conexcion con ClientesDAO
+     */
+    public ClientesDAO conexcionClientesDAO() {
+        return new ClientesDAO(conexion);
+    }
+    /**
+     * Crea la factory para la conexion con CotizacionDAO
+     * @return Conexion con CotizacionDAO
+     */
+    public ICotizacionDAO conexionCotizacionDAO() {
+        return new CotizacionDAO(conexion);
+    }
 
     /**
      *
@@ -42,7 +59,9 @@ public class DAOFactory {
      * }
      * 
      * 
-     * Se llamaria de la siguiente manera para utilizarse:
+     * Se llamaria de la siguiente manera para utilizarse
+     * (por ejemplo en capa de Negocio):
+     * 
      * (seria ture si fuera de prueba)
      * DAOFactory factory = new DAOFactory(false);
      *

@@ -20,6 +20,7 @@ public class SECOM_Persistence {
         
         System.out.println("Conectado a MySQL");
         
+        
         conexion.close();
     }
 }

@@ -6,6 +6,7 @@ package itson.secom_domain;
 
 import itson.secom_domain.enumeradores.EstadoCotizacion;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  *
@@ -14,28 +15,22 @@ import java.time.LocalDate;
 public class Cotizacion {
 
     private int id;
-    private String folio;
-    private LocalDate fechaEmision;
-    private double consumoEstimado;
+    private LocalDateTime fecha;
+    private double consumoPromedioMensualKwh; 
     private double total;
     private EstadoCotizacion estado;
-    private LocalDate vigencia;
-
+    
     private Cliente cliente;
 
     public Cotizacion() {
     }
 
-    public Cotizacion(int id, String folio, LocalDate fechaEmision,
-            double consumoEstimado, double total,
-            EstadoCotizacion estado, LocalDate vigencia, Cliente cliente) {
+    public Cotizacion(int id, LocalDateTime fecha, double consumoPromedioMensualKwh, double total, EstadoCotizacion estado, Cliente cliente) {
         this.id = id;
-        this.folio = folio;
-        this.fechaEmision = fechaEmision;
-        this.consumoEstimado = consumoEstimado;
+        this.fecha = fecha;
+        this.consumoPromedioMensualKwh = consumoPromedioMensualKwh;
         this.total = total;
         this.estado = estado;
-        this.vigencia = vigencia;
         this.cliente = cliente;
     }
 
@@ -47,28 +42,20 @@ public class Cotizacion {
         this.id = id;
     }
 
-    public String getFolio() {
-        return folio;
+    public LocalDateTime getFecha() {
+        return fecha;
     }
 
-    public void setFolio(String folio) {
-        this.folio = folio;
+    public void setFecha(LocalDateTime fecha) {
+        this.fecha = fecha;
     }
 
-    public LocalDate getFechaEmision() {
-        return fechaEmision;
+    public double getConsumoPromedioMensualKwh() {
+        return consumoPromedioMensualKwh;
     }
 
-    public void setFechaEmision(LocalDate fechaEmision) {
-        this.fechaEmision = fechaEmision;
-    }
-
-    public double getConsumoEstimado() {
-        return consumoEstimado;
-    }
-
-    public void setConsumoEstimado(double consumoEstimado) {
-        this.consumoEstimado = consumoEstimado;
+    public void setConsumoPromedioMensualKwh(double consumoPromedioMensualKwh) {
+        this.consumoPromedioMensualKwh = consumoPromedioMensualKwh;
     }
 
     public double getTotal() {
@@ -87,14 +74,6 @@ public class Cotizacion {
         this.estado = estado;
     }
 
-    public LocalDate getVigencia() {
-        return vigencia;
-    }
-
-    public void setVigencia(LocalDate vigencia) {
-        this.vigencia = vigencia;
-    }
-
     public Cliente getCliente() {
         return cliente;
     }
@@ -105,13 +84,8 @@ public class Cotizacion {
 
     @Override
     public String toString() {
-        return "Cotizacion{"
-                + "id=" + id
-                + ", folio='" + folio + '\''
-                + ", fechaEmision=" + fechaEmision
-                + ", total=" + total
-                + ", estado='" + estado + '\''
-                + ", vigencia=" + vigencia
-                + '}';
+        return "Cotizacion{" + "id=" + id + ", fecha=" + fecha + ", consumoPromedioMensualKwh=" + consumoPromedioMensualKwh + ", total=" + total + ", estado=" + estado + ", cliente=" + cliente + '}';
     }
+
+    
 }
