@@ -1,0 +1,14 @@
+Llave api.txt
+build/
+dist/
+*.spec
+__pycache__/
+
+## NO BORRAR LAS SIGUIENTES LINEAS ##
+/SECOM_Project/SECOM_Persistence/src/main/resources/config.properties
+/SECOM_Project/SECOM_Persistence/target
+/SECOM_Project/SECOM_Project/SECOM_Persistence/target/
+/SECOM_Project/SECOM_Project/SECOM_Domain/target/
+/SECOM_Project/SECOM_Domain/target/
+/SECOM_Project/SECOM_Negocio/target/
+/SECOM_Project/SECOM_PruebaCRUD/target/

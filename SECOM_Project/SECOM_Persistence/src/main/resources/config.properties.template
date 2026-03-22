@@ -1,0 +1,15 @@
+# ESTA ES UNA PLANTILLA --NO ELIMINAR --.
+
+# PASO 1 - Copia y pega este archivo en el mismo directorio y renombralo a "config.properties".
+# PASO 2 - Llenalo con las credenciales reales de la Base de Datos.
+
+# --- INFORMACION EXTRA ---
+# El archivo "config.properties" está ignorado por Git.
+# Debe de ubicarse en el directorio /src/main/resources/config.properties del proyecto de Persistencia.
+# No deben tener espacio despues del igual (ej. db.usuario=usuario).
+
+db.usuario=usuario_mysql
+db.contrasenia=tu_concontrasenia_mysql
+db.ip=ip_servidor_mysql
+db.puerto=puerto_servidor_mysql
+
