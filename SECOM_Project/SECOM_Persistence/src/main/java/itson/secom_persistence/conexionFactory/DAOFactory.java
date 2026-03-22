@@ -31,29 +31,34 @@ public class DAOFactory {
     public DAOFactory(boolean esPrueba) {
         this.conexion = new ConnectionDB(esPrueba);
     }
-    
+
     /**
      * Crea la factory para la conexcion con ClientesDAO
+     *
      * @return Conexcion con ClientesDAO
      */
     public ClientesDAO conexcionClientesDAO() {
         return new ClientesDAO(conexion);
     }
+
     /**
      * Crea la factory para la conexion con CotizacionDAO
+     *
      * @return Conexion con CotizacionDAO
      */
     public ICotizacionDAO conexionCotizacionDAO() {
         return new CotizacionDAO(conexion);
     }
-    
-    public ICalculoSolarDAO cinexionCalculoSolarDAO(){
+
+    public ICalculoSolarDAO conexionCalculoSolarDAO() {
         return new CalculoSolarDAO(conexion);
     }
-    
-    public IConsumoMensualDAO conexionConsumoMensualDAO(){
+
+    public IConsumoMensualDAO conexionConsumoMensualDAO() {
         return new ConsumoMensualDAO(conexion);
     }
+    
+    
 
     /**
      *
@@ -62,20 +67,18 @@ public class DAOFactory {
      *
      * Ejemplo con UsuariosDAO y ProductosDAO:
      *
-     * public UsuariosDAO conexionUsuariosDAO() {
-     *    return new UsuariosDAO(conexion);
-     * }
-     * 
-     * public ProductosDAO conexionProductosDAO() {
-     *    return new ProductosDAO(conexion);
-     * }
-     * 
-     * 
-     * Se llamaria de la siguiente manera para utilizarse
-     * (por ejemplo en capa de Negocio):
-     * 
-     * (seria ture si fuera de prueba)
-     * DAOFactory factory = new DAOFactory(false);
+     * public UsuariosDAO conexionUsuariosDAO() { return new
+     * UsuariosDAO(conexion); }
+     *
+     * public ProductosDAO conexionProductosDAO() { return new
+     * ProductosDAO(conexion); }
+     *
+     *
+     * Se llamaria de la siguiente manera para utilizarse (por ejemplo en capa
+     * de Negocio):
+     *
+     * (seria ture si fuera de prueba) DAOFactory factory = new
+     * DAOFactory(false);
      *
      * UsuariosDAO usuariosDAO = factory.crearUsuariosDAO();
      *

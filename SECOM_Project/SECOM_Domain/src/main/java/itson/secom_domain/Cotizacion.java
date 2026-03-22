@@ -23,8 +23,8 @@ public class Cotizacion {
 
     private double consumoPromedioMensualKwh;
     private double consumoPromedioDiarioKwh;
-    private double consumoPromedioMensual;
-    private double consumoPromedioAnual;
+    private double costoPromedioMensual;
+    private double costoPromedioAnual;
 
     private double wattsInstalados;
     private double produccionDiariaEstimada;
@@ -104,20 +104,20 @@ public class Cotizacion {
         this.consumoPromedioDiarioKwh = consumoPromedioDiarioKwh;
     }
 
-    public double getConsumoPromedioMensual() {
-        return consumoPromedioMensual;
+    public double getCostoPromedioMensual() {
+        return costoPromedioMensual;
     }
 
-    public void setConsumoPromedioMensual(double consumoPromedioMensual) {
-        this.consumoPromedioMensual = consumoPromedioMensual;
+    public void setCostoPromedioMensual(double costoPromedioMensual) {
+        this.costoPromedioMensual = costoPromedioMensual;
     }
 
-    public double getConsumoPromedioAnual() {
-        return consumoPromedioAnual;
+    public double getCostoPromedioAnual() {
+        return costoPromedioAnual;
     }
 
-    public void setConsumoPromedioAnual(double consumoPromedioAnual) {
-        this.consumoPromedioAnual = consumoPromedioAnual;
+    public void setCostoPromedioAnual(double costoPromedioAnual) {
+        this.costoPromedioAnual = costoPromedioAnual;
     }
 
     public double getWattsInstalados() {

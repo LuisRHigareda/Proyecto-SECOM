@@ -31,7 +31,7 @@ public class ClientesDAO implements IClientesDAO {
     }
 
     private static final String SQL_BASE
-            = "SELECT c.id AS id_cliente, c.usuario_id, c.rfc, c.razon_social, "
+            = "SELECT c.id AS id, c.usuario_id, c.rfc, c.razon_social, "
             + "       c.nombre_comercial, c.regimen_fiscal, c.direccion_fiscal, "
             + "       c.ciudad AS ciudad_cliente, c.activo AS cliente_activo, "
             + "       u.id AS id_usuario, u.username, u.nombre, u.email, "
@@ -79,7 +79,7 @@ public class ClientesDAO implements IClientesDAO {
 
     private Cliente mapear(ResultSet rs) throws SQLException {
         Cliente c = new Cliente();
-        c.setIdCliente(rs.getInt("id_cliente"));
+        c.setIdCliente(rs.getInt("id"));
         c.setRfc(rs.getString("rfc"));
         c.setRazonSocial(rs.getString("razon_social"));
         c.setNombreComercial(rs.getString("nombre_comercial"));

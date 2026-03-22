@@ -19,6 +19,13 @@ public class ConsumoMensual {
 
     public ConsumoMensual() {
     }
+    
+    public ConsumoMensual(int mes, int año, double consumoKwh, Cotizacion cotizacion) {
+    this.mes = mes;
+    this.año = año;
+    this.consumoKwh = consumoKwh;
+    this.cotizacion = cotizacion;
+}
 
     public ConsumoMensual(int id, int mes, int año, double consumoKwh, Cotizacion cotizacion) {
         this.id = id;

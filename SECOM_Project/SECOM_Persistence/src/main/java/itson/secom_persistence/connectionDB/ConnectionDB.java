@@ -18,8 +18,8 @@ import java.util.Properties;
 public class ConnectionDB implements IConnectionBD{
 
     private Connection connection;
-    private final String BD_REAL = "secom_pi";
-    private final String BD_TEST = "secom_pi_test";
+    private final String BD_REAL = "secom";
+    private final String BD_TEST = "secom_test";
 
     public ConnectionDB(boolean esPrueba) {
 

@@ -31,14 +31,15 @@ public class CalculoSolarDAO implements ICalculoSolarDAO {
     @Override
     public void guardar(CalculoSolar cs) throws PersistenciaException {
         String sql
-                = "INSERT INTO Calculo_Solar_cotizacion "
-                + "(cotizacion_id, estado, insolacion_usada, potencial_panel, numero_paneles "
+                = "INSERT INTO calculo_solar_cotizacion "
+                + "(cotizacion_id, estado, insolacion_usada, potencia_panel, numero_paneles, "
                 + " watts_instalados, capacidad_inversor, produccion_diaria_estimada, "
                 + " produccion_anual_estimada, porcentaje_generacion, "
-                + " factor_conversion_usada, factor_reflexion_usado) "
-                + "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                + " factor_conversion_usado, factor_reflexion_usado) "
+                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
 
-        try (Connection conn = connectionBD.getConexion(); PreparedStatement cmd = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        Connection conn = connectionBD.getConexion();
+        try (PreparedStatement cmd = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             cmd.setInt(1, cs.getCotizacion().getId());
             cmd.setString(2, cs.getEstadoMX() != null ? cs.getEstadoMX() : "");
@@ -62,7 +63,7 @@ public class CalculoSolarDAO implements ICalculoSolarDAO {
             }
 
         } catch (SQLException ex) {
-            throw new PersistenciaException("Error al guardar cálculo solar: " + ex.getMessage(), ex);
+            throw new PersistenciaException("Error al guardar calculo solar: " + ex.getMessage(), ex);
         }
     }
 
@@ -79,38 +80,41 @@ public class CalculoSolarDAO implements ICalculoSolarDAO {
                 + "ORDER BY fecha_calculo DESC LIMIT 1";
 
         try (Connection conn = connectionBD.getConexion(); PreparedStatement cmd = conn.prepareStatement(sql)) {
+
             cmd.setInt(1, idCotizacion);
-            
-            try(ResultSet rs = cmd.executeQuery()){
-                if(rs.next()){
+
+            try (ResultSet rs = cmd.executeQuery()) {
+                if (rs.next()) {
                     CalculoSolar cs = new CalculoSolar();
                     cs.setId(rs.getInt("id"));
                     cs.setEstadoMX(rs.getString("estado"));
                     cs.setInsolacionUsada(rs.getDouble("insolacion_usada"));
-                    cs.setPotencialPanel(rs.getInt("potencia_panel"));
-                    cs.setNumeroPaneles(rs.getInt("watts_instalados"));
+                    cs.setPotencialPanel(rs.getDouble("potencia_panel"));
+                    cs.setNumeroPaneles(rs.getInt("numero_paneles"));
                     cs.setWattsInstalados(rs.getDouble("watts_instalados"));
                     cs.setCapacidadInversor(rs.getDouble("capacidad_inversor"));
                     cs.setProduccionDiariaEstimada(rs.getDouble("produccion_diaria_estimada"));
                     cs.setProduccionAnualEstimada(rs.getDouble("produccion_anual_estimada"));
                     cs.setPorcentajeGeneracion(rs.getDouble("porcentaje_generacion"));
                     cs.setFactorConversionUsado(rs.getDouble("factor_conversion_usado"));
-                    cs.setFactorReflexionUsado(rs.getDouble("factor_refleccion_usado"));
-                    
+                    cs.setFactorReflexionUsado(rs.getDouble("factor_reflexion_usado"));
+
                     Timestamp ts = rs.getTimestamp("fecha_calculo");
-                    if (ts != null) cs.setFechaCalculo(ts.toLocalDateTime()); 
-                        
+                    if (ts != null) {
+                        cs.setFechaCalculo(ts.toLocalDateTime());
+                    }
+
                     Cotizacion ref = new Cotizacion();
                     ref.setId(rs.getInt("cotizacion_id"));
                     cs.setCotizacion(ref);
-                    
+
                     return cs;
                 }
             }
-        } catch (SQLException ex){
+
+        } catch (SQLException ex) {
             throw new PersistenciaException("Error al obtener calculo solar: " + ex.getMessage(), ex);
         }
         return null;
     }
-
 }

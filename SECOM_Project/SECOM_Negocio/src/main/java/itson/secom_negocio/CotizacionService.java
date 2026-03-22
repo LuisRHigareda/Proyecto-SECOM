@@ -4,11 +4,21 @@
  */
 package itson.secom_negocio;
 
+import itson.secom_domain.CalculoSolar;
+import itson.secom_domain.Cliente;
+import itson.secom_domain.ConsumoMensual;
 import itson.secom_domain.Cotizacion;
+import itson.secom_domain.DatosReciboCFE;
+import itson.secom_domain.ResultadoCalculoCotizacion;
+import itson.secom_domain.Vendedor;
+import itson.secom_domain.enumeradores.EstadoCotizacion;
+import itson.secom_persistence.ICalculoSolarDAO;
+import itson.secom_persistence.IConsumoMensualDAO;
 import itson.secom_persistence.ICotizacionDAO;
 import itson.secom_persistence.conexionFactory.DAOFactory;
 import itson.secom_persistence.excepciones.PersistenciaException;
-import itson.secom_persistence.implementacion.CotizacionDAO;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -16,68 +26,209 @@ import java.util.List;
  * @author Acer
  */
 public class CotizacionService {
-    private ICotizacionDAO cotizacionDAO;
-
+    private static final double IVA            = 0.16;
+    private static final double COSTO_KWP_MXN  = 22000.0;
+ 
+    // Solo el motor y el factory — NO se guardan los DAOs como campos
+    private final MotorCotizacionSolar motor;
+    private final DAOFactory factory;
+ 
     public CotizacionService() {
-        DAOFactory factory = new DAOFactory(false);
-        this.cotizacionDAO = factory.conexionCotizacionDAO();
+        this.factory = new DAOFactory(false);
+        this.motor   = new MotorCotizacionSolar();
     }
-
-    public void guardarCotizacion(Cotizacion cotizacion) throws Exception {
-        if (cotizacion.getConsumoPromedioMensualKwh() <= 0) {
-            throw new Exception("El consumo promedio debe ser mayor a 0.");
-        }
-        if (cotizacion.getTotal() < 0) {
-            throw new Exception("El total de la cotizacion no puede ser negativo.");
-        }
-        try {
-            cotizacionDAO.guardarCotizacion(cotizacion);
+ 
+    // -------------------------------------------------------
+    // Calcular + guardar completo
+    // -------------------------------------------------------
+    public Cotizacion calcularYGuardar(DatosReciboCFE datos, Cliente cliente, int vendedorId)
+            throws Exception {
+        validarEntrada(datos, cliente);
+ 
+        ResultadoCalculoCotizacion resultado = motor.calcular(datos);
+        Cotizacion cotizacion = construirCotizacion(datos, resultado, cliente, vendedorId);
+ 
+        // 1. Guardar cotizacion (conexion propia)
+        try (ICotizacionDAO dao = factory.conexionCotizacionDAO()) {
+            dao.guardarCotizacion(cotizacion);
         } catch (PersistenciaException ex) {
-            throw new Exception("Error al guardar en la base de datos: " + ex.getMessage());
+            throw new Exception("Error al guardar cotizacion: " + ex.getMessage());
         }
+ 
+        // 2. Guardar calculo solar (conexion propia)
+        guardarCalculoSolar(resultado, datos, cotizacion);
+ 
+        // 3. Guardar consumos historicos (conexion propia)
+        guardarConsumosHistoricos(datos, cotizacion);
+ 
+        return cotizacion;
     }
-
-    public List<Cotizacion> obtenerTodas() throws Exception {
-        try {
-            return cotizacionDAO.obtenerTodas();
+ 
+    // -------------------------------------------------------
+    // Solo calcular sin guardar (preview)
+    // -------------------------------------------------------
+    public ResultadoCalculoCotizacion calcularSinGuardar(DatosReciboCFE datos) throws Exception {
+        return motor.calcular(datos);
+    }
+ 
+    // -------------------------------------------------------
+    // Listar todas
+    // -------------------------------------------------------
+    public List<Cotizacion> listarTodas() throws Exception {
+        try (ICotizacionDAO dao = factory.conexionCotizacionDAO()) {
+            return dao.obtenerTodas();
         } catch (PersistenciaException ex) {
-            throw new Exception("Error al obtener las cotizaciones: " + ex.getMessage());
+            throw new Exception("Error al listar cotizaciones: " + ex.getMessage());
         }
     }
-
+ 
+    // -------------------------------------------------------
+    // Obtener por ID
+    // -------------------------------------------------------
     public Cotizacion obtenerPorId(int id) throws Exception {
-        if (id <= 0) {
-            throw new Exception("El ID debe ser un número valido mayor a 0.");
-        }
-        try {
-            return cotizacionDAO.obtenerPorId(id);
+        if (id <= 0) throw new Exception("ID invalido.");
+        try (ICotizacionDAO dao = factory.conexionCotizacionDAO()) {
+            return dao.obtenerPorId(id);
         } catch (PersistenciaException ex) {
-            throw new Exception("Error al buscar la cotizacion: " + ex.getMessage());
+            throw new Exception("Error al obtener cotizacion: " + ex.getMessage());
         }
     }
-
-    public void actualizarCotizacion(Cotizacion cotizacion) throws Exception {
-        if (cotizacion.getId() <= 0) {
-            throw new Exception("Se requiere un ID valido para actualizar.");
-        }
-        if (cotizacion.getTotal() < 0) {
-            throw new Exception("El total no puede ser negativo.");
-        }
-        try {
-            cotizacionDAO.actualizarCotizacion(cotizacion);
+ 
+    // -------------------------------------------------------
+    // Obtener calculo solar
+    // -------------------------------------------------------
+    public CalculoSolar obtenerCalculoSolar(int idCotizacion) throws Exception {
+        try (ICalculoSolarDAO dao = factory.conexionCalculoSolarDAO()) {
+            return dao.obtenerPorCotizacion(idCotizacion);
         } catch (PersistenciaException ex) {
-            throw new Exception("Error al actualizar la cotizacion: " + ex.getMessage());
+            throw new Exception("Error al obtener calculo solar: " + ex.getMessage());
         }
     }
-
-    public void eliminarCotizacion(int id) throws Exception {
-        if (id <= 0) {
-            throw new Exception("El ID a eliminar debe ser mayor a 0.");
-        }
-        try {
-            cotizacionDAO.eliminarCotizacion(id);
+ 
+    // -------------------------------------------------------
+    // Obtener consumos historicos
+    // -------------------------------------------------------
+    public List<ConsumoMensual> obtenerConsumos(int idCotizacion) throws Exception {
+        try (IConsumoMensualDAO dao = factory.conexionConsumoMensualDAO()) {
+            return dao.obtenerPorCotizacion(idCotizacion);
         } catch (PersistenciaException ex) {
-            throw new Exception("Error al eliminar la cotizacion: " + ex.getMessage());
+            throw new Exception("Error al obtener consumos: " + ex.getMessage());
         }
+    }
+ 
+    // -------------------------------------------------------
+    // Cambiar estado
+    // -------------------------------------------------------
+    public void cambiarEstado(int idCotizacion, EstadoCotizacion nuevoEstado, int usuarioId)
+            throws Exception {
+        Cotizacion c = obtenerPorId(idCotizacion);
+        if (c == null) throw new Exception("No existe cotizacion con id=" + idCotizacion);
+        c.setEstado(nuevoEstado);
+        c.setUpdatedBy(usuarioId);
+        try (ICotizacionDAO dao = factory.conexionCotizacionDAO()) {
+            dao.actualizarCotizacion(c);
+        } catch (PersistenciaException ex) {
+            throw new Exception("Error al cambiar estado: " + ex.getMessage());
+        }
+    }
+ 
+    // -------------------------------------------------------
+    // Helpers privados
+    // -------------------------------------------------------
+ 
+    private Cotizacion construirCotizacion(DatosReciboCFE datos,
+                                            ResultadoCalculoCotizacion r,
+                                            Cliente cliente, int vendedorId) {
+        Cotizacion c = new Cotizacion();
+        c.setCliente(cliente);
+        c.setFecha(LocalDateTime.now());
+        c.setEstado(EstadoCotizacion.BORRADOR);
+        c.setConsumoPromedioMensualKwh(r.getConsumoPromedioMensualKwh());
+        c.setConsumoPromedioDiarioKwh(r.getConsumoPromedioMensualKwh() / 30.0);
+        c.setCostoPromedioMensual(r.getPagoPromedioCFE());
+        c.setCostoPromedioAnual(r.getPagoPromedioCFE() * 12.0);
+        c.setWattsInstalados(r.getWattsInstalados());
+        c.setProduccionDiariaEstimada(r.getProduccionDiariaEstimada());
+        c.setPorcentajeCobertura(r.getPorcentajCobertura());
+        c.setRetornoInversion(r.getRetornoInversion());
+ 
+        double subtotal = r.getPotenciaInstaladaKwp() * COSTO_KWP_MXN;
+        c.setSubtotal(subtotal);
+        c.setIva(subtotal * IVA);
+        c.setTotal(subtotal * (1 + IVA));
+ 
+        if (vendedorId > 0) {
+            c.setVendedor(new Vendedor(vendedorId, 0));
+        }
+        c.setCreatedBy(vendedorId > 0 ? vendedorId : cliente.getId());
+        return c;
+    }
+ 
+    private void guardarCalculoSolar(ResultadoCalculoCotizacion r,
+                                      DatosReciboCFE datos,
+                                      Cotizacion cotizacion) throws Exception {
+        CalculoSolar cs = new CalculoSolar();
+        cs.setCotizacion(cotizacion);
+        cs.setEstadoMX(datos.getNumeroEstado() > 0
+                ? String.valueOf(datos.getNumeroEstado()) : "SON");
+        cs.setInsolacionUsada(5.5);
+        cs.setPotencialPanel(550.0);
+        cs.setNumeroPaneles(r.getNumeroPaneles());
+        cs.setWattsInstalados(r.getWattsInstalados());
+        cs.setCapacidadInversor(r.getPotenciaInstaladaKwp() * 1.25);
+        cs.setProduccionDiariaEstimada(r.getProduccionDiariaEstimada());
+        cs.setProduccionAnualEstimada(r.getGeneracioAnualEstimadaKwh());
+        cs.setPorcentajeGeneracion(r.getPorcentajCobertura());
+        cs.setFactorConversionUsado(0.80);
+        cs.setFactorReflexionUsado(1.0);
+        cs.setFechaCalculo(LocalDateTime.now());
+ 
+        try (ICalculoSolarDAO dao = factory.conexionCalculoSolarDAO()) {
+            dao.guardar(cs);
+        } catch (PersistenciaException ex) {
+            throw new Exception("Error al guardar calculo solar: " + ex.getMessage());
+        }
+    }
+ 
+    private void guardarConsumosHistoricos(DatosReciboCFE datos,
+                                            Cotizacion cotizacion) throws Exception {
+        List<Double> consumos = datos.getConsumoHistoricos();
+        if (consumos == null || consumos.isEmpty()) return;
+ 
+        int mesActual  = LocalDateTime.now().getMonthValue();
+        int anioActual = LocalDateTime.now().getYear();
+        int total      = consumos.size();
+        List<ConsumoMensual> lista = new ArrayList<>();
+ 
+        for (int i = 0; i < total; i++) {
+            Double kwh = consumos.get(i);
+            if (kwh == null || kwh <= 0) continue;
+            int offset = total - 1 - i;
+            int mes    = mesActual - offset;
+            int anio   = anioActual;
+            while (mes <= 0) { mes += 12; anio--; }
+            lista.add(new ConsumoMensual(mes, anio, kwh, cotizacion));
+        }
+ 
+        try (IConsumoMensualDAO dao = factory.conexionConsumoMensualDAO()) {
+            dao.guardarTodos(lista);
+        } catch (PersistenciaException ex) {
+            throw new Exception("Error al guardar consumos: " + ex.getMessage());
+        }
+    }
+ 
+    private void validarEntrada(DatosReciboCFE datos, Cliente cliente) throws Exception {
+        if (datos == null)
+            throw new Exception("Los datos del recibo son obligatorios.");
+        if (cliente == null || cliente.getIdCliente() <= 0)
+            throw new Exception("Se necesita un cliente valido.");
+        if (datos.getTipoTarifa() == null)
+            throw new Exception("Se necesita especificar el tipo de tarifa.");
+        boolean tieneConsumo = datos.getConsumoActualKwh() > 0
+                || (datos.getConsumoHistoricos() != null && !datos.getConsumoHistoricos().isEmpty());
+        if (!tieneConsumo)
+            throw new Exception("Se necesita al menos un dato de consumo kWh.");
     }
 }
+ 
+ 
