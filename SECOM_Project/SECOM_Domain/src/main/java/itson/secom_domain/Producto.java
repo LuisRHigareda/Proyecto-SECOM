@@ -18,6 +18,7 @@ public class Producto {
     private String espesificaciones;
     private double precioUnitario;
     private int stock;
+    private int capacidad;
 
     public Producto() {
     }
@@ -79,6 +80,15 @@ public class Producto {
     public void setStock(int stock) {
         this.stock = stock;
     }
+
+    public int getCapacidad() {
+        return capacidad;
+    }
+
+    public void setCapacidad(int capacidad) {
+        this.capacidad = capacidad;
+    }
+    
 
     @Override
     public String toString() {

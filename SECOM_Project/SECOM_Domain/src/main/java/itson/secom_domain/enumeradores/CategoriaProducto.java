@@ -14,5 +14,11 @@ public enum CategoriaProducto {
     ESTRUCTURA,
     CABLEADO,
     PIEZA_ALUMINIO,
-    OTROS
+    OTROS;
+
+    public boolean equalsIgnoreCase(String categoria) {
+    return this.name().equalsIgnoreCase(categoria.trim());
+}
+
+  
 }

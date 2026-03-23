@@ -13,6 +13,10 @@ import itson.secom_persistence.implementacion.CalculoSolarDAO;
 import itson.secom_persistence.implementacion.ClientesDAO;
 import itson.secom_persistence.implementacion.ConsumoMensualDAO;
 import itson.secom_persistence.implementacion.CotizacionDAO;
+import itson.secom_persistence.IParametrosSistemaDAO;
+import itson.secom_persistence.IPaqueteCotizacionDAO;
+import itson.secom_persistence.implementacion.ParametrosSistemaDAO;
+import itson.secom_persistence.implementacion.PaqueteCotizacionDAO;
 
 /**
  *
@@ -58,7 +62,13 @@ public class DAOFactory {
         return new ConsumoMensualDAO(conexion);
     }
     
-    
+    public IParametrosSistemaDAO conexionParametrosSistemaDAO() {
+    return new ParametrosSistemaDAO(conexion);
+}
+
+public IPaqueteCotizacionDAO conexionPaqueteCotizacionDAO() {
+    return new PaqueteCotizacionDAO(conexion);
+}
 
     /**
      *
