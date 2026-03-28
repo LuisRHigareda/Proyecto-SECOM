@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="color-scheme" content="dark light" />
+        <title>SECOM | Cotizador</title>
+        <link rel="icon" href="assets/logo.png" />
+        <link rel="stylesheet" href="css/styles.css" />
+
+        <!-- Icons (Lucide) -->
+        <script defer src="https://unpkg.com/lucide@0.456.0/dist/umd/lucide.min.js"></script>
+
+        <!-- Charts -->
+        <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+        <!-- Export to PDF -->
+        <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+        <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+        <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+        <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    </head>
+
+    <body>
+        <div class="app" id="appRoot">
+            <aside class="sidebar" id="sidebar">
+                <div class="brand">
+                    <img class="brand__logo" src="assets/logo.png" alt="SECOM" />
+                    <div class="brand__text">
+                        <div class="brand__title">SECOM</div>
+                        <div class="brand__subtitle">Energía Solar</div>
+                    </div>
+                    <button class="icon-btn" id="btnSidebarToggle" aria-label="Contraer/expandir">
+                        <i data-lucide="panel-left-close"></i>
+                    </button>
+                </div>
+
+                <nav class="nav" aria-label="Navegación">
+                    <button class="nav__item is-active" data-route="historial">
+                        <i data-lucide="list"></i>
+                        <span>Lista de cotizaciones</span>
+                    </button>
+                    <button class="nav__item" data-route="cotizador">
+                        <i data-lucide="plus-circle"></i>
+                        <span>Crear cotización</span>
+                    </button>
+                    <button class="nav__item" data-route="cashvolt">
+                        <i data-lucide="cloud-upload"></i>
+                        <span>CashVolt</span>
+                    </button>
+                    <button class="nav__item" data-route="proyectos">
+                        <i data-lucide="briefcase"></i>
+                        <span>Proyectos</span>
+                    </button>
+                    <div class="nav__section">Opciones</div>
+                    <button class="nav__item" data-route="opciones">
+                        <i data-lucide="settings"></i>
+                        <span>Preferencias</span>
+                    </button>
+                </nav>
+
+                <div class="sidebar__footer">
+                    <div class="usercard">
+                        <div class="usercard__avatar" aria-hidden="true">LR</div>
+                        <div class="usercard__meta">
+                            <div class="usercard__name">Equipo SECOM</div>
+                            <div class="usercard__role">Administrador</div>
+                        </div>
+                    </div>
+                    <div class="footerhint">v1.0</div>
+                </div>
+            </aside>
+
+            <main class="main">
+                <header class="topbar">
+                    <div class="topbar__left">
+                        <button class="icon-btn show-on-mobile" id="btnOpenSidebar" aria-label="Abrir menú">
+                            <i data-lucide="menu"></i>
+                        </button>
+                        <div>
+                            <div class="topbar__title" id="pageTitle">Nueva cotización</div>
+                            <div class="topbar__crumb" id="pageCrumb">Cotizaciones / Nueva</div>
+                        </div>
+                    </div>
+
+                    <div class="topbar__right">
+                        <div class="pill" id="pillStatus">
+                            <span class="pill__dot"></span>
+                            <span id="pillStatusText">Listo</span>
+                        </div>
+                    </div>
+                </header>
+
+                <section class="content">
+                    <!-- Cotizador -->
+                    <div class="route is-active" id="route-cotizador"></div>
+                    <!-- CashVolt -->
+                    <div class="route" id="route-cashvolt"></div>
+                    <!-- Proyectos -->
+                    <div class="route" id="route-proyectos"></div>
+                    <!-- Historial -->
+                    <div class="route" id="route-historial"></div>
+                    <!-- Opciones -->
+                    <div class="route" id="route-opciones"></div>
+                </section>
+
+                <div class="toast-wrap" id="toastWrap" aria-live="polite" aria-relevant="additions"></div>
+
+                <div class="modal" id="modal" role="dialog" aria-modal="true" aria-hidden="true">
+                    <div class="modal__overlay" data-close="true"></div>
+                    <div class="modal__panel" role="document" aria-labelledby="modalTitle">
+                        <div class="modal__head">
+                            <div>
+                                <div class="modal__title" id="modalTitle">Detalle</div>
+                                <div class="modal__subtitle" id="modalSubtitle"></div>
+                            </div>
+                            <button class="icon-btn" data-close="true" aria-label="Cerrar">
+                                <i data-lucide="x"></i>
+                            </button>
+                        </div>
+                        <div class="modal__body" id="modalBody"></div>
+                        <div class="modal__foot" id="modalFoot"></div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+
+        <script type="module" src="js/app.js"></script>
+    </body>
+</html>

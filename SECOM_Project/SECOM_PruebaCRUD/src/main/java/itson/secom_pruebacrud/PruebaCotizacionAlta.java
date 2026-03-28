@@ -8,7 +8,6 @@ package itson.secom_pruebacrud;
  *
  * @author Arell
  */
-
 import itson.secom_domain.DatosReciboCFE;
 import itson.secom_domain.ResultadoCalculoCotizacion;
 import itson.secom_domain.ResultadoCotizacion;
@@ -18,132 +17,128 @@ import itson.secom_persistence.conexionFactory.DAOFactory;
 import java.util.Scanner;
 
 public class PruebaCotizacionAlta {
-public static void main(String[] args) {
 
-    Scanner sc = new Scanner(System.in);
+    public static void main(String[] args) {
 
-    DAOFactory factory = new DAOFactory(false);
-    CotizacionService service = new CotizacionService(factory);
+        Scanner sc = new Scanner(System.in);
 
-    int opcion;
+        DAOFactory factory = new DAOFactory(false);
+        CotizacionService service = new CotizacionService(factory);
 
-    do {
-        System.out.println("\n=================================");
-        System.out.println("     SISTEMA DE COTIZACIONES");
-        System.out.println("=================================");
-        System.out.println("1. Crear cotización");
-        System.out.println("0. Salir");
-        System.out.print("Seleccione una opción: ");
+        int opcion;
 
-        opcion = sc.nextInt();
-        sc.nextLine(); // limpiar buffer
+        do {
+            System.out.println("\n=================================");
+            System.out.println("     SISTEMA DE COTIZACIONES");
+            System.out.println("=================================");
+            System.out.println("1. Crear cotización");
+            System.out.println("0. Salir");
+            System.out.print("Seleccione una opción: ");
 
-        switch (opcion) {
+            opcion = sc.nextInt();
+            sc.nextLine(); // limpiar buffer
 
-            case 1:
-                try {
+            switch (opcion) {
 
-                    System.out.println("\n--- NUEVA COTIZACIÓN ---");
-                    System.out.println("Formato:");
-                    System.out.println("Nombre | consumos | tipoPeriodo | ciudad | tarifa");
+                case 1:
+                    try {
 
-                    String input = sc.nextLine();
-                    String[] partes = input.split("\\|");
+                        System.out.println("\n--- NUEVA COTIZACIÓN ---");
+                        System.out.println("Formato:");
+                        System.out.println("Nombre | consumos | tipoPeriodo | ciudad | tarifa");
 
-                    if (partes.length < 5) {
-                        System.out.println("Formato incorrecto.");
-                        break;
+                        String input = sc.nextLine();
+                        String[] partes = input.split("\\|");
+
+                        if (partes.length < 5) {
+                            System.out.println("Formato incorrecto.");
+                            break;
+                        }
+
+                        String nombre = partes[0].trim();
+                        String consumos = partes[1].trim();
+                        String tipo = partes[2].trim();
+                        String ciudad = partes[3].trim();
+                        String tarifa = partes[4].trim();
+
+                        //  Crear objeto SIN tarifa en constructor
+                        TipoTarifa tipoTarifa = TipoTarifa.valueOf(tarifa.trim().toUpperCase());
+
+                        DatosReciboCFE datos = new DatosReciboCFE(
+                                nombre,
+                                consumos,
+                                tipo,
+                                ciudad,
+                                tipoTarifa
+                        );
+
+
+                        ResultadoCalculoCotizacion previo
+                                = service.calcularCotizacionConPaquete(datos, 1);
+
+                        System.out.println("\n--- PRE-CÁLCULO ---");
+                        System.out.println("Consumo mensual: "
+                                + previo.getConsumoPromedioMensualKwh() + " kWh");
+                        System.out.println("kW requeridos: "
+                                + previo.getKwpRequerido());
+
+                        // Selección de paquete
+                        System.out.print("\nSeleccione paquete (ID): ");
+                        int paqueteId = sc.nextInt();
+                        sc.nextLine();
+
+                        CotizacionService service2 = new CotizacionService(new DAOFactory(false));
+
+
+                        ResultadoCalculoCotizacion r
+                                = service2.calcularCotizacionConPaquete(datos, paqueteId);
+
+                        // RESULTADO FINAL
+                        System.out.println("\n========== RESULTADO ==========");
+
+                        System.out.println("Cliente: " + r.getNombreCliente());
+
+                        System.out.println("\n--- CONSUMO ---");
+                        System.out.println("Mensual: "
+                                + r.getConsumoPromedioMensualKwh() + " kWh");
+                        System.out.println("Diario: "
+                                + r.getConsumoPromedioDiarioKwh() + " kWh");
+
+                        System.out.println("\n--- SISTEMA ---");
+                        System.out.println("kW requeridos: "
+                                + r.getKwpRequerido());
+                        System.out.println("Watts instalados: "
+                                + r.getWattsInstalados());
+
+                        System.out.println("\n--- PRODUCCIÓN ---");
+                        System.out.println("Producción diaria: "
+                                + r.getProduccionDiariaEstimada());
+                        System.out.println("Cobertura: "
+                                + r.getPorcentajeCobertura() + " %");
+
+                        System.out.println("\n--- COSTOS ---");
+                        System.out.println("Subtotal: $" + r.getSubtotal());
+                        System.out.println("IVA: $" + r.getIva());
+                        System.out.println("TOTAL: $" + r.getTotal());
+
+                        System.out.println("=================================\n");
+
+                    } catch (Exception e) {
+                        System.out.println("Error en cotización: " + e.getMessage());
+                        e.printStackTrace();
                     }
+                    break;
 
-                    String nombre = partes[0].trim();
-                    String consumos = partes[1].trim();
-                    String tipo = partes[2].trim();
-                    String ciudad = partes[3].trim();
-                    String tarifa = partes[4].trim();
+                case 0:
+                    System.out.println("Saliendo...");
+                    break;
 
-                    // 🔥 Crear objeto SIN tarifa en constructor
-                    TipoTarifa tipoTarifa = TipoTarifa.valueOf(tarifa.trim().toUpperCase());
+                default:
+                    System.out.println("Opción inválida");
+            }
 
-DatosReciboCFE datos = new DatosReciboCFE(
-        nombre,
-        consumos,
-        tipo,
-        ciudad,
-        tipoTarifa
-);
+        } while (opcion != 0);
 
-                    // 🔥 Setear tarifa desde string → enum
-                   // datos.setTipoTarifaDesdeString(tarifa);
-
-                    // 🔥 PRE-CÁLCULO (usa paquete 1 como base)
-                    ResultadoCalculoCotizacion previo =
-                            service.calcularCotizacionConPaquete(datos, 1);
-
-                    System.out.println("\n--- PRE-CÁLCULO ---");
-                    System.out.println("Consumo mensual: "
-                            + previo.getConsumoPromedioMensualKwh() + " kWh");
-                    System.out.println("kW requeridos: "
-                            + previo.getKwpRequerido());
-
-                    // 🔥 Selección de paquete
-                    System.out.print("\nSeleccione paquete (ID): ");
-                    int paqueteId = sc.nextInt();
-                    sc.nextLine();
-
-// 👇 AGREGA ESTO
-                    CotizacionService service2 = new CotizacionService(new DAOFactory(false));
-
-// 👇 CAMBIA A ESTO
-                    ResultadoCalculoCotizacion r
-                            = service2.calcularCotizacionConPaquete(datos, paqueteId);
-
-                    // 🔥 RESULTADO FINAL
-                    System.out.println("\n========== RESULTADO ==========");
-
-                    System.out.println("Cliente: " + r.getNombreCliente());
-
-                    System.out.println("\n--- CONSUMO ---");
-                    System.out.println("Mensual: "
-                            + r.getConsumoPromedioMensualKwh() + " kWh");
-                    System.out.println("Diario: "
-                            + r.getConsumoPromedioDiarioKwh() + " kWh");
-
-                    System.out.println("\n--- SISTEMA ---");
-                    System.out.println("kW requeridos: "
-                            + r.getKwpRequerido());
-                    System.out.println("Watts instalados: "
-                            + r.getWattsInstalados());
-
-                    System.out.println("\n--- PRODUCCIÓN ---");
-                    System.out.println("Producción diaria: "
-                            + r.getProduccionDiariaEstimada());
-                    System.out.println("Cobertura: "
-                            + r.getPorcentajeCobertura() + " %");
-
-                    System.out.println("\n--- COSTOS ---");
-                    System.out.println("Subtotal: $" + r.getSubtotal());
-                    System.out.println("IVA: $" + r.getIva());
-                    System.out.println("TOTAL: $" + r.getTotal());
-
-                    System.out.println("=================================\n");
-
-                } catch (Exception e) {
-                    System.out.println("Error en cotización: " + e.getMessage());
-                    e.printStackTrace();
-                }
-                break;
-
-            case 0:
-                System.out.println("Saliendo...");
-                break;
-
-            default:
-                System.out.println("Opción inválida");
-        }
-
-    } while (opcion != 0);
-
-    sc.close();
+        sc.close();
+    }
 }
-}
-

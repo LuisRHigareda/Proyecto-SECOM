@@ -1,0 +1,2540 @@
+import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
+import { analyzeReceiptFile } from './receiptParser.js';
+import { computeQuote, buildExportHtml } from './quoteEngine.js';
+import { getQuotes, getProjects, resetAllData, saveProjectFromQuote, saveProject, saveQuote, updateProject, updateQuote, removeProject } from './storage.js';
+
+const state = {
+  route: 'cotizador',
+  selectedTariff: null,
+  wizardStep: 1,
+  receiptFile: null,
+  receipt: null, // parsed
+  receiptCanvas: null,
+  client: {
+    nombre: '',
+    telefono: '',
+    email: '',
+    direccion: '',
+  },
+  // Información editable del sistema (no necesariamente derivada del recibo)
+  quoteMeta: {
+    panelModelo: 'Panel fotovoltaico',
+    panelDimensiones: '',
+    inversorModelo: '',
+    tipoTecho: 'No especificado',
+    sombras: 'No especificado',
+    perdidasSombraPct: 0,
+    notasFisicas: '',
+  },
+  // Permite sobrescribir resultados calculados (p. ej. paneles manuales)
+  overrides: {
+    paneles: null,
+  },
+  params: {
+    yieldKwhPerKwpMonth: 135,
+    panelWatts: 550,
+    costPerKwp: 22000,
+    contingencyPct: 0.06,
+  },
+  quote: null,
+  savedQuote: null,
+  chart: null,
+  exportChart: null,
+  cashvolt: {
+    file: null,
+    data: null,
+    status: 'Listo',
+  }
+};
+
+// Catálogo base de insumos (para agregar rápidamente en el Paso 2: Datos)
+// Nota: los precios son editables en el CRUD.
+const INSUMO_CATALOG = [
+  { codigo:'P1', descripcion:'Módulo FV 550–615W', unidad:'UD', precio: 0 },
+  { codigo:'I1', descripcion:'Inversor', unidad:'UD', precio: 0 },
+  { codigo:'E1', descripcion:'Estructura de montaje', unidad:'UD', precio: 0 },
+  { codigo:'M1', descripcion:'Conectores MC4 (par)', unidad:'UD', precio: 0 },
+  { codigo:'M2', descripcion:'Cable fotovoltaico', unidad:'M', precio: 0 },
+  { codigo:'PZ', descripcion:'Caja de protecciones FV', unidad:'UD', precio: 0 },
+  { codigo:'MO', descripcion:'Mano de obra especializada', unidad:'SERV', precio: 0 },
+  { codigo:'TR', descripcion:'Trámite CFE', unidad:'SERV', precio: 0 },
+  { codigo:'FL', descripcion:'Fletes y seguros', unidad:'SERV', precio: 0 },
+  { codigo:'ING', descripcion:'Ingeniería', unidad:'SERV', precio: 0 },
+];
+
+const TARIFFS = [
+  { key:'dom_m', label:'Doméstica Mensual', periodo:'Mensual', familia:'Doméstica' },
+  { key:'dom_b', label:'Doméstica Bimestral', periodo:'Bimestral', familia:'Doméstica' },
+  { key:'pdbt_m', label:'PDBT Mensual', periodo:'Mensual', familia:'PDBT' },
+  { key:'pdbt_b', label:'PDBT Bimestral', periodo:'Bimestral', familia:'PDBT' },
+  { key:'gdmth', label:'GDMTH', periodo:'Mensual', familia:'GDMTH' },
+  { key:'gdmto', label:'GDMTO', periodo:'Mensual', familia:'GDMTO' },
+  { key:'cashvolt', label:'Subir Datos a CashVolt', kind:'cashvolt' },
+];
+
+init();
+
+function init(){
+  // Theme
+  const theme = localStorage.getItem('secom_theme') || 'dark';
+  document.documentElement.dataset.theme = theme;
+
+  // Icons
+  if (window.lucide) window.lucide.createIcons();
+  else window.addEventListener('load', () => window.lucide?.createIcons(), { once:true });
+
+  // Sidebar
+  const sidebar = $('#sidebar');
+  $('#btnSidebarToggle')?.addEventListener('click', () => {
+    sidebar.classList.toggle('is-collapsed');
+  });
+
+  $('#btnOpenSidebar')?.addEventListener('click', () => sidebar.classList.add('is-open'));
+  // Close sidebar when navigating on mobile
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 860) sidebar.classList.remove('is-open');
+  });
+
+  // Routing
+  $$('.nav__item[data-route]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const r = btn.dataset.route;
+      if (r === 'cotizador') startNewQuoteFlow();
+      else setRoute(r);
+      sidebar.classList.remove('is-open');
+    });
+  });
+
+  // Modal close
+  $('#modal')?.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t?.dataset?.close === 'true') closeModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  renderAllRoutes();
+  // Pantalla principal: lista de cotizaciones
+  setRoute('historial');
+}
+
+function setRoute(route){
+  state.route = route;
+
+  $$('.nav__item').forEach(el => el.classList.toggle('is-active', el.dataset.route === route));
+  $$('.route').forEach(el => el.classList.toggle('is-active', el.id === `route-${route}`));
+
+  const titleMap = {
+    cotizador: { t: 'Crear cotización', c: 'Cotizaciones / Crear' },
+    cashvolt: { t: 'CashVolt', c: 'CashVolt / Carga' },
+    proyectos: { t: 'Proyectos', c: 'Proyectos / Gestión' },
+    historial: { t: 'Lista de cotizaciones', c: 'Cotizaciones / Lista' },
+    opciones: { t: 'Preferencias', c: 'Sistema / Preferencias' },
+  };
+  $('#pageTitle').textContent = titleMap[route]?.t || 'SECOM';
+  $('#pageCrumb').textContent = titleMap[route]?.c || '';
+}
+
+function startNewQuoteFlow(){
+  state.selectedTariff = null;
+  state.overrides = { paneles: null };
+  state.quoteMeta = {
+    panelModelo: 'Panel fotovoltaico',
+    panelDimensiones: '',
+    inversorModelo: '',
+    tipoTecho: 'No especificado',
+    sombras: 'No especificado',
+    perdidasSombraPct: 0,
+    notasFisicas: '',
+  };
+  resetWizard(true);
+  renderCotizadorRoute();
+  setRoute('cotizador');
+}
+
+function renderAllRoutes(){
+  renderCotizadorRoute();
+  renderCashvoltRoute();
+  renderHistorialRoute();
+  renderProyectosRoute();
+  renderOpcionesRoute();
+}
+
+// ------------------------------
+// Cotizador (Wizard)
+// ------------------------------
+
+function renderCotizadorRoute(){
+  const root = $('#route-cotizador');
+  // Pantalla 1 (equivalente al menú de Tkinter)
+  if (!state.selectedTariff){
+    root.innerHTML = renderTariffSelector();
+    wireTariffSelector();
+    window.lucide?.createIcons();
+    return;
+  }
+
+  root.innerHTML = `
+    <div class="row" style="justify-content:space-between; align-items:center; gap:12px">
+      <div class="pill">
+        <span class="pill__dot"></span>
+        <span>Tarifa seleccionada:</span>&nbsp;<b>${escapeHtml(state.selectedTariff.label)}</b>
+      </div>
+      <button class="btn" id="btnChangeTarifa"><i data-lucide="repeat-2"></i>Cambiar</button>
+    </div>
+
+    <div class="card card--flat" style="box-shadow:none; margin-top:12px">
+      <div class="stepper" id="stepper"></div>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:14px">
+      <div class="card" id="wizardLeft"></div>
+      <div class="card" id="wizardRight"></div>
+    </div>
+  `;
+
+  $('#btnChangeTarifa')?.addEventListener('click', () => {
+    state.selectedTariff = null;
+    resetWizard(true);
+    renderCotizadorRoute();
+  });
+
+  buildStepper();
+  renderWizard();
+}
+
+function renderTariffSelector(){
+  const buttons = TARIFFS.filter(t => t.kind !== 'cashvolt').map(t => {
+    return `
+      <button class="btn btn--big" data-tariff="${t.key}">
+        <div style="display:flex; align-items:center; gap:10px">
+          <span class="badge">${escapeHtml(t.periodo || '—')}</span>
+          <div style="text-align:left">
+            <div style="font-weight:900">${escapeHtml(t.label)}</div>
+            <div style="color:var(--muted); font-size:12px">Selecciona para cargar el recibo</div>
+          </div>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card__title">Nueva cotización</div>
+      <div class="card__subtitle">Selecciona el tipo de tarifa para iniciar el proceso.</div>
+
+      <div class="grid" style="grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-top:12px">
+        ${buttons}
+      </div>
+
+      <div class="row" style="justify-content:flex-start; margin-top:14px">
+        <button class="btn btn--success" id="btnGoCashvolt"><i data-lucide="cloud-upload"></i>Subir Datos a CashVolt</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireTariffSelector(){
+  $('#btnGoCashvolt')?.addEventListener('click', () => setRoute('cashvolt'));
+  $$('#route-cotizador [data-tariff]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.tariff;
+      const t = TARIFFS.find(x => x.key === key);
+      if (!t) return;
+
+      state.selectedTariff = t;
+      resetWizard(true);
+      renderCotizadorRoute();
+
+      // Abrir selector de archivo inmediatamente (flujo equivalente a “abrir PDF”)
+      setTimeout(() => $('#fileInput')?.click(), 50);
+    });
+  });
+}
+
+// ------------------------------
+// CashVolt
+// ------------------------------
+
+function renderCashvoltRoute(){
+  const root = $('#route-cashvolt');
+  if (!root) return;
+
+  root.innerHTML = `
+    <div class="grid cols-2" style="gap:14px">
+      <div class="card">
+        <div class="card__title">Subir Datos a CashVolt</div>
+        <div class="help">Selecciona el archivo .xlsm final o usa una cotización guardada para preparar los datos.</div>
+
+        <input id="cvFile" type="file" accept=".xlsm,application/vnd.ms-excel" hidden />
+
+        <div class="dropzone" id="cvDrop" tabindex="0" role="button" aria-label="Cargar archivo .xlsm">
+          <div class="dropzone__icon"><i data-lucide="upload"></i></div>
+          <div style="min-width:0">
+            <div class="dropzone__title">Arrastre y suelte aquí, o seleccione un archivo</div>
+            <div class="dropzone__sub" id="cvFileHint">.xlsm</div>
+          </div>
+        </div>
+
+        <div class="wizard-actions" style="margin-top:14px">
+          <button class="btn btn--primary" id="cvLoad"><i data-lucide="sparkles"></i>Preparar datos</button>
+          <button class="btn" id="cvUseLast"><i data-lucide="history"></i>Usar última cotización</button>
+        </div>
+
+        <div class="help" id="cvMsg" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">Datos listos para CashVolt</div>
+        <div class="help">Revisa y copia la información para completar el formulario.</div>
+
+        <div style="overflow:auto; margin-top:10px">
+          <table class="table" id="cvTable">
+            <thead>
+              <tr>
+                <th>Campo</th>
+                <th>Valor</th>
+                <th style="text-align:right">Acción</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="wizard-actions" style="justify-content:flex-end; margin-top:12px">
+          <button class="btn" id="cvOpen"><i data-lucide="external-link"></i>Abrir CashVolt</button>
+          <button class="btn btn--success" id="cvCopy"><i data-lucide="copy"></i>Copiar todo</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  wireCashvolt();
+}
+
+function wireCashvolt(){
+  const fileInput = $('#cvFile');
+  const dz = $('#cvDrop');
+
+  const pick = () => fileInput.click();
+  dz?.addEventListener('click', pick);
+  dz?.addEventListener('keydown', (e) => (e.key==='Enter' || e.key===' ') && pick());
+
+  dz?.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-dragover'); });
+  dz?.addEventListener('dragleave', () => dz.classList.remove('is-dragover'));
+  dz?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('is-dragover');
+    const f = e.dataTransfer.files?.[0];
+    if (f) setCashvoltFile(f);
+  });
+
+  fileInput?.addEventListener('change', () => {
+    const f = fileInput.files?.[0];
+    if (f) setCashvoltFile(f);
+  });
+
+  $('#cvUseLast')?.addEventListener('click', () => {
+    const quotes = getQuotes();
+    const last = quotes[0];
+    if (!last){
+      toast({ title:'Sin cotizaciones', message:'No hay cotizaciones guardadas para usar.', icon:'alert-triangle' });
+      return;
+    }
+    state.cashvolt.data = buildCashvoltDataFromQuote(last);
+    $('#cvMsg').textContent = `Datos preparados desde ${last.id}.`;
+    renderCashvoltTable();
+  });
+
+  $('#cvLoad')?.addEventListener('click', () => {
+    // Si hay archivo, mostramos datos preparados (sin lectura profunda)
+    if (state.cashvolt.file){
+      state.cashvolt.data = buildCashvoltDataFromQuote({
+        client: { nombre: (state.client?.nombre || 'Cliente') },
+        quote: state.quote || {},
+        receipt: state.receipt || {},
+      });
+      $('#cvMsg').textContent = 'Datos preparados correctamente.';
+      renderCashvoltTable();
+      toast({ title:'CashVolt', message:'Datos listos para capturar.', icon:'check-circle' });
+      return;
+    }
+
+    // Sin archivo: intenta usar la cotización actual
+    if (state.quote && state.client?.nombre){
+      state.cashvolt.data = buildCashvoltDataFromQuote({ client: state.client, quote: state.quote, receipt: state.receipt });
+      $('#cvMsg').textContent = 'Datos preparados desde la cotización actual.';
+      renderCashvoltTable();
+      return;
+    }
+    toast({ title:'Falta información', message:'Selecciona un archivo .xlsm o usa una cotización guardada.', icon:'alert-triangle' });
+  });
+
+  $('#cvOpen')?.addEventListener('click', () => window.open('https://cashvolt.mx/public/login', '_blank'));
+  $('#cvCopy')?.addEventListener('click', async () => {
+    const rows = state.cashvolt.data || [];
+    if (!rows.length){
+      toast({ title:'Nada para copiar', message:'Primero prepara los datos.', icon:'alert-triangle' });
+      return;
+    }
+    const text = rows.map(r => `${r.label} ${r.value}`).join('\n');
+    try{
+      await navigator.clipboard.writeText(text);
+      toast({ title:'Copiado', message:'Se copió al portapapeles.', icon:'copy' });
+    } catch {
+      toast({ title:'No se pudo copiar', message:'Tu navegador bloqueó el portapapeles.', icon:'x-circle' });
+    }
+  });
+
+  renderCashvoltTable();
+}
+
+function setCashvoltFile(file){
+  state.cashvolt.file = file;
+  $('#cvFileHint').textContent = `${file.name} · ${(file.size/1024/1024).toFixed(2)} MB`;
+  $('#cvMsg').textContent = '';
+}
+
+function buildCashvoltDataFromQuote(q){
+  const quote = q.quote || q;
+  const paneles = Number(quote.paneles || q.quote?.paneles || 0);
+  const panelW = Number(q.quote?.params?.panelWatts || quote.params?.panelWatts || 550);
+  const ahorro = Number(q.quote?.ahorroMensual || quote.ahorroMensual || 0);
+  const costo = Number(q.quote?.inversion || quote.inversion || 0);
+  return [
+    { label:'Asesor de ventas:', value:'Jorge Alejandro Díaz Gaxiola' },
+    { label:'Nombre del cliente:', value:(q.client?.nombre || q.receipt?.nombre || '—') },
+    { label:'Ahorro mensual del proyecto:', value:String(Math.round(ahorro)) },
+    { label:'Cantidad de Paneles:', value:String(paneles || '—') },
+    { label:'Capacidad del Panel:', value:String(panelW || '—') },
+    { label:'Costo del proyecto:', value:String(Math.round(costo)) },
+  ];
+}
+
+function renderCashvoltTable(){
+  const tbody = $('#cvTable tbody');
+  if (!tbody) return;
+  const rows = state.cashvolt.data || [];
+  tbody.innerHTML = rows.length ? rows.map((r, i) => `
+    <tr>
+      <td>${escapeHtml(r.label)}</td>
+      <td>${escapeHtml(String(r.value))}</td>
+      <td style="text-align:right">
+        <button class="btn" data-cv-copy="${i}"><i data-lucide="copy"></i>Copiar</button>
+      </td>
+    </tr>
+  `).join('') : `
+    <tr><td colspan="3" style="color:var(--muted)">Aún no hay datos preparados.</td></tr>
+  `;
+
+  window.lucide?.createIcons();
+  tbody.querySelectorAll('[data-cv-copy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = Number(btn.dataset.cvCopy);
+      const row = rows[idx];
+      if (!row) return;
+      try{
+        await navigator.clipboard.writeText(String(row.value));
+        toast({ title:'Copiado', message:row.label, icon:'copy' });
+      } catch {
+        toast({ title:'No se pudo copiar', message:'Tu navegador bloqueó el portapapeles.', icon:'x-circle' });
+      }
+    });
+  });
+}
+
+function buildStepper(){
+  const el = $('#stepper');
+  const steps = [
+    { n:1, label:'Recibo' },
+    { n:2, label:'Datos' },
+    { n:3, label:'Cotización' },
+    { n:4, label:'Exportar' },
+  ];
+
+  el.innerHTML = steps.map((s, i) => {
+    const cls = s.n === state.wizardStep ? 'is-active' : (s.n < state.wizardStep ? 'is-done' : '');
+    const line = i < steps.length - 1 ? '<div class="stepper__line"></div>' : '';
+    return `
+      <div class="stepper__item ${cls}">
+        <div class="stepper__dot">${s.n}</div>
+        <div class="stepper__label">${s.label}</div>
+      </div>
+      ${line}
+    `;
+  }).join('');
+  window.lucide?.createIcons();
+}
+
+function gotoStep(n){
+  state.wizardStep = n;
+  buildStepper();
+  renderWizard();
+}
+
+function renderWizard(){
+  const left = $('#wizardLeft');
+  const right = $('#wizardRight');
+
+  if (state.wizardStep === 1){
+    left.innerHTML = renderStep1Left();
+    right.innerHTML = renderStep1Right();
+    wireStep1();
+  } else if (state.wizardStep === 2){
+    left.innerHTML = renderStep2Left();
+    right.innerHTML = renderStep2Right();
+    wireStep2();
+  } else if (state.wizardStep === 3){
+    left.innerHTML = renderStep3Left();
+    right.innerHTML = renderStep3Right();
+    wireStep3();
+  } else {
+    left.innerHTML = renderStep4Left();
+    right.innerHTML = renderStep4Right();
+    wireStep4();
+  }
+  window.lucide?.createIcons();
+}
+
+function renderStep1Left(){
+  return `
+    <div class="card__title">Recibo de luz</div>
+    <div class="help">Sube un archivo PDF o una imagen (JPG/PNG) del recibo.</div>
+
+    <input id="fileInput" type="file" accept="application/pdf,image/png,image/jpeg" hidden />
+
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Cargar recibo">
+      <div class="dropzone__icon"><i data-lucide="upload"></i></div>
+      <div style="min-width:0">
+        <div class="dropzone__title">Arrastre y suelte aquí, o seleccione un archivo</div>
+        <div class="dropzone__sub" id="fileHint">PDF o imagen</div>
+      </div>
+    </div>
+
+    <div class="wizard-actions">
+      <button class="btn btn--primary" id="btnAnalyze"><i data-lucide="scan"></i>Analizar</button>
+      <button class="btn" id="btnClear"><i data-lucide="trash-2"></i>Limpiar</button>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi">
+        <div class="kpi__label">Tarifa</div>
+        <div class="kpi__value" id="kpiTarifa">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Consumo periodo</div>
+        <div class="kpi__value" id="kpiConsumo">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Total a pagar</div>
+        <div class="kpi__value" id="kpiTotal">—</div>
+      </div>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <div class="help" id="analyzeMsg"> </div>
+      <button class="btn btn--success" id="btnStep1Next" disabled><i data-lucide="arrow-right"></i>Continuar</button>
+    </div>
+  `;
+}
+
+function renderStep1Right(){
+  return `
+    <div class="card__title">Vista previa</div>
+    <div class="preview" id="preview">
+      <div class="preview__empty" id="previewEmpty">Sin archivo cargado</div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">No. de servicio</div>
+        <div class="kpi__value" id="kpiServicio">—</div>
+      </div>
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">Periodo</div>
+        <div class="kpi__value" id="kpiPeriodo">—</div>
+      </div>
+    </div>
+
+    <div class="kpi" style="margin-top:10px">
+      <div class="kpi__label">Tipo de periodo</div>
+      <div class="kpi__value" id="kpiTipoPeriodo">—</div>
+    </div>
+  `;
+}
+
+function wireStep1(){
+  const fileInput = $('#fileInput');
+  const dz = $('#dropzone');
+
+  const pickFile = () => fileInput.click();
+
+  dz.addEventListener('click', pickFile);
+  dz.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') pickFile();
+  });
+
+  dz.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dz.classList.add('is-dragover');
+  });
+  dz.addEventListener('dragleave', () => dz.classList.remove('is-dragover'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('is-dragover');
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFileSelected(f);
+  });
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files?.[0];
+    if (f) handleFileSelected(f);
+  });
+
+  $('#btnClear').addEventListener('click', () => resetWizard(true));
+
+  $('#btnAnalyze').addEventListener('click', async () => {
+    if (!state.receiptFile){
+      toast({ title:'Falta el archivo', message:'Selecciona un recibo para continuar.', icon:'alert-triangle' });
+      return;
+    }
+
+    setPillStatus('Analizando…', 'busy');
+    $('#analyzeMsg').textContent = 'Procesando recibo…';
+    $('#btnAnalyze').disabled = true;
+
+    try{
+      const result = await analyzeReceiptFile(state.receiptFile, {
+        selectedTariff: state.selectedTariff,
+        onProgress: (p) => {
+          if (p?.message) $('#analyzeMsg').textContent = p.message;
+        }
+      });
+
+      state.receipt = result.parsed;
+      // Inicializa estructuras del flujo (si no existen)
+      state.receipt.instalacion = state.receipt.instalacion || {};
+      state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+      state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+      state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+      state.receiptCanvas = result.canvas;
+      updateStep1FromReceipt();
+
+      setPillStatus('Listo', 'ok');
+      $('#analyzeMsg').textContent = 'Recibo analizado correctamente.';
+      $('#btnStep1Next').disabled = false;
+
+      // Prefill datos del cliente
+      state.client.nombre = state.client.nombre || state.receipt.nombre || '';
+      state.client.direccion = state.client.direccion || state.receipt.direccion || '';
+
+      toast({ title:'Recibo listo', message:'Datos detectados y listos para cotizar.', icon:'check-circle' });
+    } catch (err){
+      console.error(err);
+      setPillStatus('Error', 'error');
+      $('#analyzeMsg').textContent = err?.message || 'No se pudo analizar el recibo.';
+      toast({ title:'No se pudo analizar', message: err?.message || 'Verifica el archivo e inténtalo de nuevo.', icon:'x-circle' });
+    } finally {
+      $('#btnAnalyze').disabled = false;
+    }
+  });
+
+  $('#btnStep1Next').addEventListener('click', () => gotoStep(2));
+
+  // Initial
+  updateStep1FileHint();
+  updateStep1Preview();
+  if ($('#kpiTarifa') && state.selectedTariff?.label) $('#kpiTarifa').textContent = state.selectedTariff.label;
+}
+
+async function handleFileSelected(file){
+  state.receiptFile = file;
+  state.receipt = null;
+  state.receiptCanvas = null;
+  state.quote = null;
+  state.savedQuote = null;
+
+  updateStep1FileHint();
+  updateStep1Preview();
+  $('#btnStep1Next').disabled = true;
+  $('#analyzeMsg').textContent = '';
+
+  // Also reset KPIs
+  $('#kpiTarifa').textContent = state.selectedTariff?.label || '—';
+  $('#kpiConsumo').textContent = '—';
+  $('#kpiTotal').textContent = '—';
+  $('#kpiServicio').textContent = '—';
+  $('#kpiPeriodo').textContent = '—';
+  $('#kpiTipoPeriodo').textContent = '—';
+}
+
+function updateStep1FileHint(){
+  const f = state.receiptFile;
+  $('#fileHint').textContent = f ? `${f.name} · ${(f.size/1024/1024).toFixed(2)} MB` : 'PDF o imagen';
+}
+
+function updateStep1Preview(){
+  const preview = $('#preview');
+  const empty = $('#previewEmpty');
+
+  // Clear
+  preview.querySelectorAll('canvas,img').forEach(x => x.remove());
+  if (!state.receiptFile){
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const isPdf = state.receiptFile.type === 'application/pdf' || state.receiptFile.name.toLowerCase().endsWith('.pdf');
+  if (!isPdf){
+    const url = URL.createObjectURL(state.receiptFile);
+    const img = document.createElement('img');
+    img.src = url;
+    img.onload = () => URL.revokeObjectURL(url);
+    preview.appendChild(img);
+    return;
+  }
+
+  // PDF preview (nativo del navegador)
+  const url = URL.createObjectURL(state.receiptFile);
+  const iframe = document.createElement('iframe');
+  iframe.className = 'preview__frame';
+  iframe.src = url;
+  iframe.onload = () => {
+    // liberamos después de cargar
+    setTimeout(() => URL.revokeObjectURL(url), 2500);
+  };
+  preview.appendChild(iframe);
+}
+
+function updateStep1FromReceipt(){
+  const r = state.receipt;
+  if (!r) return;
+  $('#kpiTarifa').textContent = r.tarifa || '—';
+  $('#kpiConsumo').textContent = r.consumoPeriodo ? `${formatNumber(r.consumoPeriodo)} kWh` : '—';
+  $('#kpiTotal').textContent = r.totalAPagar ? formatCurrencyMXN(r.totalAPagar) : '—';
+  $('#kpiServicio').textContent = r.servicio || '—';
+  $('#kpiPeriodo').textContent = r.periodo?.raw || '—';
+  $('#kpiTipoPeriodo').textContent = r.tipoPeriodo || '—';
+}
+
+// ------------------------------
+// Step 2
+// ------------------------------
+
+function renderStep2Left(){
+  const r = state.receipt;
+  const ajusteKwh = Number(r?.ajusteConsumo?.kwhMes || 0);
+  const ajusteNota = (r?.ajusteConsumo?.nota || '').trim();
+  const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
+  const impuestosPct = Number.isFinite(Number(r?.impuestosPct)) ? Number(r.impuestosPct) : 0.16;
+  return `
+    <div class="card__title">Revisión y ajustes</div>
+    <div class="help">Verifica los datos extraídos del recibo. Puedes corregirlos antes de generar la cotización.</div>
+
+    <div class="card__subtitle" style="margin-top:12px">Datos del recibo</div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>No. de servicio</label>
+        <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
+      </div>
+      <div class="field">
+        <label>Tarifa</label>
+        <input id="rTarifa" placeholder="1B / DAC / ..." value="${escapeAttr(r?.tarifa || '')}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field" style="flex:1.4">
+        <label>Titular del recibo (detectado)</label>
+        <input value="${escapeAttr(r?.nombre || '')}" disabled />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Estado (abreviatura)</label>
+        <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field" style="flex:1.4">
+        <label>Periodo facturado</label>
+        <input id="rPeriodo" placeholder="DD MMM AA - DD MMM AA" value="${escapeAttr(r?.periodo?.raw || '')}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Tipo de periodo</label>
+        <select id="rTipoPeriodo">
+          <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>Mensual</option>
+          <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>Bimestral</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Consumo del periodo (kWh)</label>
+        <input id="rConsumo" type="number" min="0" step="1" value="${escapeAttr(String(r?.consumoPeriodo || 0))}" />
+      </div>
+      <div class="field">
+        <label>Total a pagar (MXN)</label>
+        <input id="rTotal" type="number" min="0" step="1" value="${escapeAttr(String(r?.totalAPagar || 0))}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>No. hilos</label>
+        <input id="rHilos" placeholder="1" value="${escapeAttr(String(r?.hilos || ''))}" />
+      </div>
+      <div class="field">
+        <label>Ajuste de consumo (kWh/mes)</label>
+        <input id="rAjusteKwh" type="number" step="1" value="${escapeAttr(String(ajusteKwh))}" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Nota del ajuste de consumo</label>
+      <textarea id="rAjusteNota" rows="2" placeholder="Ejemplo: Se considera la carga de un vehículo eléctrico.">${escapeHtml(ajusteNota)}</textarea>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Datos del cliente</div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Nombre del cliente (puede ser diferente al titular del recibo)</label>
+        <input id="cNombre" placeholder="Nombre del cliente" value="${escapeAttr(state.client.nombre)}" />
+      </div>
+      <div class="field">
+        <label>Teléfono</label>
+        <input id="cTel" placeholder="(###) ### ####" value="${escapeAttr(state.client.telefono)}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Correo</label>
+        <input id="cEmail" placeholder="cliente@correo.com" value="${escapeAttr(state.client.email)}" />
+      </div>
+      <div class="field">
+        <label>Tipo seleccionado</label>
+        <input value="${escapeAttr(state.selectedTariff?.label || '')}" disabled />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Dirección</label>
+      <textarea id="cDir" rows="3" placeholder="Dirección del servicio">${escapeHtml(state.client.direccion)}</textarea>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Insumos de la cotización</div>
+    <div class="help">Agrega, edita o elimina insumos. El total se calcula automáticamente y se refleja en la cotización.</div>
+
+    <div class="row" style="margin-top:10px; align-items:flex-end">
+      <div class="field" style="flex:2">
+        <label>Agregar desde catálogo</label>
+        <select id="insCatalog">
+          <option value="">Selecciona un insumo…</option>
+          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+        <button class="btn" id="btnAddCatalog"><i data-lucide="plus"></i>Agregar</button>
+        <button class="btn" id="btnAddManual"><i data-lucide="edit-3"></i>Agregar manual</button>
+      </div>
+    </div>
+
+    <div style="overflow:auto; margin-top:10px">
+      <table class="table table--tight" id="insTable">
+        <thead>
+          <tr>
+            <th style="min-width:140px">CÓDIGO</th>
+            <th style="min-width:260px">DESCRIPCIÓN</th>
+            <th style="min-width:120px">CANTIDAD</th>
+            <th style="min-width:120px">UNIDAD</th>
+            <th style="min-width:140px">PRECIO</th>
+            <th style="min-width:140px">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${insumos.length ? insumos.map((it, i) => renderInsumoRow(it, i)).join('') : `
+            <tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="insumos-summary" style="margin-top:10px">
+      <div class="insumos-summary__row"><span>Subtotal</span><b id="insSubtotal">—</b></div>
+      <div class="insumos-summary__row">
+        <span>Impuestos (IVA %)</span>
+        <div style="display:flex; align-items:center; gap:10px">
+          <input id="insTaxPct" class="insumos-summary__tax" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(Math.round(impuestosPct*100*10)/10))}" />
+          <b id="insTaxes">—</b>
+        </div>
+      </div>
+      <div class="insumos-summary__row insumos-summary__row--total"><span>Total</span><b id="insTotal">—</b></div>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBack2"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNext2"><i data-lucide="arrow-right"></i>Continuar</button>
+    </div>
+
+    <div class="help" id="msg2" style="margin-top:10px"></div>
+  `;
+}
+
+function renderStep2Right(){
+  const r = state.receipt;
+  const hist = (r?.historial || []).slice(-8);
+  const val = validateReceiptAgainstSelection(r, state.selectedTariff);
+  const q = computeQuote(r, state.client, state.params, state.overrides);
+  return `
+    <div class="card__title">Resumen detectado</div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">Tipo seleccionado</div>
+        <div class="kpi__value" style="font-size:13px">${escapeHtml(state.selectedTariff?.label || '—')}</div>
+      </div>
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">Validación</div>
+        <div class="kpi__value" style="font-size:13px">${val.ok ? 'Correcta' : 'Revisar'}</div>
+      </div>
+    </div>
+
+    <div class="help" style="margin-top:8px">${escapeHtml(val.message)}</div>
+
+    <div class="kpi">
+      <div class="kpi__label">No. de servicio</div>
+      <div class="kpi__value">${escapeHtml(r?.servicio || '—')}</div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">Periodo</div>
+        <div class="kpi__value" style="font-size:13px">${escapeHtml(r?.periodo?.raw || '—')}</div>
+      </div>
+      <div class="kpi" style="flex:1">
+        <div class="kpi__label">Total a pagar</div>
+        <div class="kpi__value" style="font-size:14px">${r?.totalAPagar ? formatCurrencyMXN(r.totalAPagar) : '—'}</div>
+      </div>
+    </div>
+
+    <div class="kpi" style="margin-top:10px">
+      <div class="kpi__label">Consumo del periodo</div>
+      <div class="kpi__value">${r?.consumoPeriodo ? `${formatNumber(r.consumoPeriodo)} kWh` : '—'}</div>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Consumo histórico (kWh)</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      ${hist.length ? hist.map(h => `<span class="badge">${formatNumber(h.kwh)} kWh</span>`).join('') : '<span class="badge">Sin datos</span>'}
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Resumen de cotización</div>
+    <div class="kpi" style="margin-top:8px">
+      <div class="kpi__label">Total de cotización</div>
+      <div class="kpi__value" id="kpiQuoteTotal" style="font-size:14px">${formatCurrencyMXN(q.inversion || 0)}</div>
+    </div>
+  `;
+}
+
+// ------------------------------
+// Insumos (CRUD) - Paso 2
+// ------------------------------
+
+function normalizeInsumo(it){
+  const n = (v) => {
+    const x = Number(String(v ?? '').replace(/,/g,'').trim());
+    return Number.isFinite(x) ? x : 0;
+  };
+  return {
+    codigo: String(it?.codigo ?? '').trim(),
+    descripcion: String(it?.descripcion ?? '').trim(),
+    cantidad: Math.max(0, n(it?.cantidad ?? 1)),
+    unidad: String(it?.unidad ?? 'UD').trim() || 'UD',
+    precio: Math.max(0, n(it?.precio ?? 0)),
+  };
+}
+
+function calcInsumoTotal(it){
+  const x = normalizeInsumo(it);
+  return Math.round((x.cantidad * x.precio) * 100) / 100;
+}
+
+function computeInsumosTotals(){
+  const r = state.receipt || {};
+  const ins = Array.isArray(r.insumos) ? r.insumos : [];
+  const subtotal = ins.reduce((acc, it) => acc + calcInsumoTotal(it), 0);
+  const pct = Number.isFinite(Number(r.impuestosPct)) ? Number(r.impuestosPct) : 0.16;
+  const impuestos = subtotal * pct;
+  const total = subtotal + impuestos;
+  return {
+    subtotal: Math.round(subtotal * 100) / 100,
+    impuestos: Math.round(impuestos * 100) / 100,
+    total: Math.round(total * 100) / 100,
+    pct,
+  };
+}
+
+function renderInsumoRow(it, i){
+  const x = normalizeInsumo(it);
+  const total = calcInsumoTotal(x);
+  const unidades = ['UD','PZA','M','W','SERV'];
+  return `
+    <tr data-i="${i}">
+      <td>
+        <div class="tbl-code">
+          <input class="tbl-input" data-field="codigo" value="${escapeAttr(x.codigo)}" placeholder="P1" />
+          <button class="icon-btn icon-btn--sm" type="button" data-del="${i}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+        </div>
+      </td>
+      <td><input class="tbl-input" data-field="descripcion" value="${escapeAttr(x.descripcion)}" placeholder="Descripción" /></td>
+      <td><input class="tbl-input" data-field="cantidad" type="number" min="0" step="0.01" value="${escapeAttr(String(x.cantidad))}" /></td>
+      <td>
+        <select class="tbl-select" data-field="unidad">
+          ${unidades.map(u => `<option ${u===x.unidad?'selected':''}>${u}</option>`).join('')}
+        </select>
+      </td>
+      <td><input class="tbl-input" data-field="precio" type="number" min="0" step="0.01" value="${escapeAttr(String(x.precio))}" /></td>
+      <td><div class="tbl-total" data-total>${formatCurrencyMXN(total)}</div></td>
+    </tr>
+  `;
+}
+
+function setupInsumosCrud(){
+  const r = state.receipt;
+  if (!r) return;
+  r.insumos = Array.isArray(r.insumos) ? r.insumos : [];
+  r.impuestosPct = Number.isFinite(Number(r.impuestosPct)) ? Number(r.impuestosPct) : 0.16;
+
+  const tbody = $('#insTable tbody');
+  if (!tbody) return;
+
+  const renderBody = () => {
+    const ins = r.insumos;
+    tbody.innerHTML = ins.length
+      ? ins.map((it, i) => renderInsumoRow(it, i)).join('')
+      : `<tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>`;
+    window.lucide?.createIcons();
+    updateTotalsUI();
+  };
+
+  const updateTotalsUI = () => {
+    const t = computeInsumosTotals();
+    $('#insSubtotal') && ($('#insSubtotal').textContent = formatCurrencyMXN(t.subtotal));
+    $('#insTaxes') && ($('#insTaxes').textContent = formatCurrencyMXN(t.impuestos));
+    $('#insTotal') && ($('#insTotal').textContent = formatCurrencyMXN(t.total));
+
+    // Reflejar en el KPI de la derecha
+    const q = computeQuote(r, state.client, state.params, state.overrides);
+    const kpi = $('#kpiQuoteTotal');
+    if (kpi) kpi.textContent = formatCurrencyMXN(q.inversion || 0);
+  };
+
+  // Inicial
+  updateTotalsUI();
+
+  // Agregar desde catálogo
+  $('#btnAddCatalog')?.addEventListener('click', () => {
+    const sel = $('#insCatalog');
+    if (!sel || sel.value === ''){
+      toast({ title:'Selecciona un insumo', message:'Elige un insumo del catálogo para agregar.', icon:'alert-triangle' });
+      return;
+    }
+    const idx = Number(sel.value);
+    if (!Number.isFinite(idx)){
+      toast({ title:'Selecciona un insumo', message:'Elige un insumo del catálogo para agregar.', icon:'alert-triangle' });
+      return;
+    }
+    const base = INSUMO_CATALOG[idx];
+    if (!base) return;
+    r.insumos.push({ codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio });
+    if (sel) sel.value = '';
+    state.quote = null;
+    renderBody();
+  });
+
+  // Agregar manual
+  $('#btnAddManual')?.addEventListener('click', () => {
+    r.insumos.push({ codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0 });
+    state.quote = null;
+    renderBody();
+  });
+
+  // Impuestos (IVA %)
+  $('#insTaxPct')?.addEventListener('input', () => {
+    const n = Number(String($('#insTaxPct').value || '').replace(/,/g,'').trim());
+    const pct = Number.isFinite(n) ? Math.max(0, Math.min(30, n)) / 100 : 0.16;
+    r.impuestosPct = pct;
+    state.quote = null;
+    updateTotalsUI();
+  });
+
+  // Delegación para inputs/selects y eliminación
+  const syncRow = (tr) => {
+    const idx = Number(tr?.dataset?.i);
+    if (!Number.isFinite(idx)) return;
+    const current = r.insumos[idx] || {};
+    const read = (field) => tr.querySelector(`[data-field="${field}"]`);
+    const codigo = read('codigo')?.value ?? '';
+    const descripcion = read('descripcion')?.value ?? '';
+    const cantidad = Number(read('cantidad')?.value ?? 0);
+    const unidad = read('unidad')?.value ?? 'UD';
+    const precio = Number(read('precio')?.value ?? 0);
+    r.insumos[idx] = normalizeInsumo({ ...current, codigo, descripcion, cantidad, unidad, precio });
+    // Actualizar total de la fila
+    const total = calcInsumoTotal(r.insumos[idx]);
+    tr.querySelector('[data-total]') && (tr.querySelector('[data-total]').textContent = formatCurrencyMXN(total));
+  };
+
+  tbody.addEventListener('input', (e) => {
+    const tr = e.target.closest('tr[data-i]');
+    if (!tr) return;
+    syncRow(tr);
+    state.quote = null;
+    updateTotalsUI();
+  });
+
+  tbody.addEventListener('change', (e) => {
+    const tr = e.target.closest('tr[data-i]');
+    if (!tr) return;
+    syncRow(tr);
+    state.quote = null;
+    updateTotalsUI();
+  });
+
+  tbody.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-del]');
+    if (!btn) return;
+    const idx = Number(btn.dataset.del);
+    if (!Number.isFinite(idx)) return;
+    r.insumos.splice(idx, 1);
+    state.quote = null;
+    renderBody();
+  });
+
+  // Asegurar render inicial de filas con íconos
+  renderBody();
+}
+
+function wireStep2(){
+  if (!state.receipt){
+    gotoStep(1);
+    return;
+  }
+
+  $('#btnBack2').addEventListener('click', () => gotoStep(1));
+
+  // CRUD de insumos (en vivo)
+  setupInsumosCrud();
+
+  $('#btnNext2').addEventListener('click', () => {
+    // Actualizar recibo (editable)
+    const toNum = (v) => {
+      const s = String(v||'').replace(/,/g,'').trim();
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    state.receipt.servicio = $('#rServicio').value.trim();
+    state.receipt.tarifa = $('#rTarifa').value.trim().toUpperCase();
+    state.receipt.periodo = state.receipt.periodo || { raw:'', start:null, end:null, days:0 };
+    state.receipt.periodo.raw = $('#rPeriodo').value.trim();
+    state.receipt.tipoPeriodo = $('#rTipoPeriodo').value;
+    state.receipt.periodo.days = state.receipt.tipoPeriodo === 'Bimestral' ? 60 : 30;
+    state.receipt.consumoPeriodo = toNum($('#rConsumo').value);
+    state.receipt.totalAPagar = toNum($('#rTotal').value);
+    state.receipt.hilos = ($('#rHilos').value || '').trim();
+    state.receipt.estado = ($('#rEstado').value || '').trim().toUpperCase();
+
+    // Ajuste de consumo (kWh/mes) + nota
+    const ajKwh = toNum($('#rAjusteKwh')?.value);
+    const ajNota = ($('#rAjusteNota')?.value || '').trim();
+    state.receipt.ajusteConsumo = { kwhMes: ajKwh, nota: ajNota };
+
+    state.client.nombre = $('#cNombre').value.trim();
+    state.client.telefono = $('#cTel').value.trim();
+    state.client.email = $('#cEmail').value.trim();
+    state.client.direccion = $('#cDir').value.trim();
+
+    // Asegurar estructuras
+    state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+
+    const msg = $('#msg2');
+    if (!state.client.nombre){
+      msg.textContent = 'Por favor, captura el nombre del cliente.';
+      toast({ title:'Falta información', message:'El nombre del cliente es obligatorio.', icon:'alert-triangle' });
+      return;
+    }
+
+    msg.textContent = '';
+    state.quote = null; // recalcular con insumos
+    gotoStep(3);
+  });
+}
+
+// ------------------------------
+// Step 3
+// ------------------------------
+
+function renderStep3Left(){
+  const q = state.quote || computeQuote(state.receipt, state.client, state.params, state.overrides);
+  state.quote = q;
+  const meta = state.quoteMeta || {};
+  const panelesShown = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? Number(state.overrides.paneles) : q.paneles;
+
+  return `
+    <div class="card__title">Cotización</div>
+    <div class="help">Ajusta parámetros, consideraciones físicas y (si aplica) sobrescribe paneles. Los resultados se recalculan al instante.</div>
+
+    <div class="grid cols-3" style="margin-top:12px">
+      <div class="kpi">
+        <div class="kpi__label">Potencia estimada</div>
+        <div class="kpi__value">${q.kwp.toFixed(2)} kWp</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Paneles</div>
+        <div class="kpi__value">${panelesShown}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Inversión</div>
+        <div class="kpi__value">${formatCurrencyMXN(q.inversion)}</div>
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:10px">
+      <div class="kpi">
+        <div class="kpi__label">Ahorro mensual</div>
+        <div class="kpi__value">${formatCurrencyMXN(q.ahorroMensual)}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Retorno</div>
+        <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Producción</div>
+        <div class="kpi__value">${formatNumber(q.produccionMensual)} kWh/mes</div>
+      </div>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Parámetros</div>
+
+    <div class="row">
+      <div class="field">
+        <label>Producción promedio</label>
+        <input id="pYield" type="number" min="60" max="220" step="1" value="${q.params.yieldKwhPerKwpMonth}" />
+      </div>
+      <div class="field">
+        <label>Panel (W)</label>
+        <input id="pPanel" type="number" min="350" max="700" step="10" value="${q.params.panelWatts}" />
+      </div>
+      <div class="field">
+        <label>Costo por kWp (MXN)</label>
+        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${q.params.costPerKwp}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Contingencia</label>
+        <input id="pCont" type="number" min="0" max="0.2" step="0.01" value="${q.params.contingencyPct}" />
+      </div>
+      <div class="field">
+        <label>Consumo mensual usado</label>
+        <input value="${formatNumber(q.consumoMensual)} kWh/mes" disabled />
+      </div>
+      <div class="field">
+        <label>Pago promedio</label>
+        <input value="${formatCurrencyMXN(q.pagoProm)}" disabled />
+      </div>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Edición del sistema</div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Paneles (manual)</label>
+        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(String(panelesShown))}" />
+      </div>
+      <div class="field" style="flex:1.4">
+        <label>Modelo de panel</label>
+        <input id="mPanelModelo" placeholder="Ej. Canadian Solar 615W" value="${escapeAttr(meta.panelModelo || '')}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Dimensiones del panel</label>
+        <input id="mPanelDim" placeholder="Ej. 2.2 x 1.1 m" value="${escapeAttr(meta.panelDimensiones || '')}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Tipo de techo</label>
+        <select id="mTecho">
+          ${['No especificado','Losa','Lámina','Teja','Otro'].map(x => `<option ${x===meta.tipoTecho?'selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Sombras</label>
+        <select id="mSombras">
+          <option value="0" ${Number(meta.perdidasSombraPct||0)===0?'selected':''}>Ninguna (0%)</option>
+          <option value="0.10" ${Number(meta.perdidasSombraPct||0)===0.10?'selected':''}>Baja (10%)</option>
+          <option value="0.20" ${Number(meta.perdidasSombraPct||0)===0.20?'selected':''}>Media (20%)</option>
+          <option value="0.35" ${Number(meta.perdidasSombraPct||0)===0.35?'selected':''}>Alta (35%)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Modelo de inversor</label>
+        <input id="mInversor" placeholder="Ej. Huawei 50kW" value="${escapeAttr(meta.inversorModelo || '')}" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Consideraciones físicas (notas)</label>
+      <textarea id="mNotasFisicas" rows="3" placeholder="Ej. Área disponible, orientación, sombras por estructuras, tipo de techo, etc.">${escapeHtml(meta.notasFisicas || '')}</textarea>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:flex-end">
+      <button class="btn" id="btnAutoPaneles"><i data-lucide="refresh-ccw"></i>Recalcular paneles</button>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBack3"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNext3"><i data-lucide="arrow-right"></i>Generar cotización</button>
+    </div>
+  `;
+}
+
+function renderStep3Right(){
+  return `
+    <div class="card__title">Consumo y pagos</div>
+    <div class="help">Histórico detectado en el recibo.</div>
+
+    <div style="margin-top:12px">
+      <canvas id="chart" height="180"></canvas>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:12px">Detalle</div>
+    <div style="overflow:auto">
+      <table class="table" id="histTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Consumo (kWh)</th>
+            <th>Pago (MXN)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+}
+
+function wireStep3(){
+  if (!state.receipt){
+    gotoStep(1);
+    return;
+  }
+
+  $('#btnBack3').addEventListener('click', () => gotoStep(2));
+  $('#btnNext3').addEventListener('click', () => gotoStep(4));
+
+  const recompute = () => {
+    state.params.yieldKwhPerKwpMonth = Number($('#pYield').value || 135);
+    state.params.panelWatts = Number($('#pPanel').value || 550);
+    state.params.costPerKwp = Number($('#pCost').value || 22000);
+    state.params.contingencyPct = Number($('#pCont').value || 0.06);
+
+    // Overrides
+    const pManual = Number($('#oPaneles')?.value);
+    state.overrides.paneles = (Number.isFinite(pManual) && pManual > 0) ? Math.round(pManual) : null;
+
+    // Meta y consideraciones físicas (simulación)
+    state.quoteMeta.panelModelo = ($('#mPanelModelo')?.value || '').trim();
+    state.quoteMeta.panelDimensiones = ($('#mPanelDim')?.value || '').trim();
+    state.quoteMeta.inversorModelo = ($('#mInversor')?.value || '').trim();
+    state.quoteMeta.tipoTecho = ($('#mTecho')?.value || 'No especificado');
+    state.quoteMeta.perdidasSombraPct = Number($('#mSombras')?.value || 0);
+    state.quoteMeta.sombras = $('#mSombras')?.selectedOptions?.[0]?.textContent?.split('(')?.[0]?.trim() || 'No especificado';
+    state.quoteMeta.notasFisicas = ($('#mNotasFisicas')?.value || '').trim();
+
+    // Guardar en el recibo para persistencia simple
+    state.receipt.instalacion = {
+      tipoTecho: state.quoteMeta.tipoTecho,
+      perdidasSombraPct: state.quoteMeta.perdidasSombraPct,
+      sombras: state.quoteMeta.sombras,
+      notasFisicas: state.quoteMeta.notasFisicas,
+      panelModelo: state.quoteMeta.panelModelo,
+      panelDimensiones: state.quoteMeta.panelDimensiones,
+      inversorModelo: state.quoteMeta.inversorModelo,
+    };
+
+    state.quote = computeQuote(state.receipt, state.client, state.params, state.overrides);
+    // re-render step 3 only
+    renderWizard();
+  };
+
+  const onInput = debounce(recompute, 150);
+  ['#pYield','#pPanel','#pCost','#pCont','#oPaneles','#mPanelModelo','#mPanelDim','#mTecho','#mSombras','#mInversor','#mNotasFisicas']
+    .forEach(id => $(id)?.addEventListener('input', onInput));
+
+  $('#btnAutoPaneles')?.addEventListener('click', () => {
+    state.overrides.paneles = null;
+    // Recalcula con overrides limpios
+    state.quote = computeQuote(state.receipt, state.client, state.params, state.overrides);
+    renderWizard();
+  });
+
+  renderHistoryTable();
+  renderChart();
+}
+
+function renderHistoryTable(){
+  const tbody = $('#histTable tbody');
+  if (!tbody) return;
+  const hist = (state.receipt?.historial || []).slice(-12);
+  const rows = hist.length ? hist.map((h, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${formatNumber(h.kwh)}</td>
+      <td>${formatCurrencyMXN(h.pago)}</td>
+    </tr>
+  `).join('') : `
+    <tr><td colspan="3" style="color:var(--muted)">Sin datos de consumo histórico.</td></tr>
+  `;
+  tbody.innerHTML = rows;
+}
+
+function renderChart(){
+  const el = $('#chart');
+  if (!el || !window.Chart) return;
+
+  // Destroy previous
+  if (state.chart){
+    state.chart.destroy();
+    state.chart = null;
+  }
+
+  const hist = (state.receipt?.historial || []).slice(-12);
+  const labels = hist.map((_, i) => `P${i+1}`);
+  const consumos = hist.map(h => h.kwh);
+  const pagos = hist.map(h => h.pago);
+
+  state.chart = new window.Chart(el, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Consumo (kWh)', data: consumos, tension: 0.25 },
+        { label: 'Pago (MXN)', data: pagos, tension: 0.25 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--muted') } },
+        tooltip: { enabled: true },
+      },
+      scales: {
+        x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--muted') }, grid: { color: 'rgba(255,255,255,0.06)' } },
+        y: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--muted') }, grid: { color: 'rgba(255,255,255,0.06)' } },
+      }
+    }
+  });
+}
+
+// ------------------------------
+// Step 4
+// ------------------------------
+
+function renderStep4Left(){
+  const q = state.quote || computeQuote(state.receipt, state.client, state.params, state.overrides);
+  state.quote = q;
+  return `
+    <div class="card__title">Exportar</div>
+    <div class="help">Revisa el documento y genera el PDF cuando esté listo.</div>
+
+    <div class="wizard-actions" style="justify-content:space-between; margin-top:12px">
+      <button class="btn" id="btnBack4"><i data-lucide="arrow-left"></i>Volver</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end">
+        <button class="btn" id="btnExport"><i data-lucide="download"></i>Descargar PDF</button>
+        <button class="btn" id="btnGoCashvoltFromQuote"><i data-lucide="cloud-upload"></i>CashVolt</button>
+        <button class="btn btn--primary" id="btnSaveQuote"><i data-lucide="save"></i>Guardar cotización</button>
+        <button class="btn btn--success" id="btnConfirmProject"><i data-lucide="check"></i>Confirmar proyecto</button>
+      </div>
+    </div>
+
+    <div class="help" id="msg4" style="margin-top:10px"></div>
+  `;
+}
+
+function renderStep4Right(){
+  const q = state.quote || computeQuote(state.receipt, state.client, state.params, state.overrides);
+  state.quote = q;
+
+  const exportHtml = buildExportHtml({
+    ...q,
+    receipt: state.receipt,
+    client: state.client,
+    params: state.params,
+    id: state.savedQuote?.id || '',
+    selectedTariff: state.selectedTariff,
+  });
+
+  return `
+    <div class="card__title">Formato final</div>
+    <div class="help">Vista previa del documento final.</div>
+
+    <div class="card__subtitle" style="margin-top:12px">Vista previa</div>
+    <div class="preview" style="min-height:420px; align-items:flex-start; justify-content:flex-start; overflow:auto; padding:12px">
+      ${exportHtml}
+    </div>
+  `;
+}
+
+function wireStep4(){
+  if (!state.receipt){
+    gotoStep(1);
+    return;
+  }
+
+  $('#btnBack4').addEventListener('click', () => gotoStep(3));
+  $('#btnExport').addEventListener('click', exportPdf);
+  $('#btnGoCashvoltFromQuote')?.addEventListener('click', () => {
+    state.cashvolt.data = buildCashvoltDataFromQuote({ client: state.client, quote: state.quote, receipt: state.receipt });
+    renderCashvoltRoute();
+    setRoute('cashvolt');
+  });
+
+  $('#btnSaveQuote').addEventListener('click', () => {
+    try{
+      const q = persistQuote('Guardada');
+      toast({ title:'Cotización guardada', message:`Se agregó al historial (${q.id}).`, icon:'save' });
+      $('#msg4').textContent = `Guardada como ${q.id}.`;
+      renderHistorialTable();
+    } catch (e){
+      toast({ title:'No se pudo guardar', message: e?.message || 'Revisa los datos.', icon:'x-circle' });
+    }
+  });
+
+  $('#btnConfirmProject').addEventListener('click', () => {
+    try{
+      const q = persistQuote('Confirmada');
+      const project = saveProjectFromQuote({ ...q, status:'Confirmada' });
+      updateQuote(q.id, { status:'Confirmada' });
+      toast({ title:'Proyecto confirmado', message:`Se agregó a Proyectos (${project.id}).`, icon:'check' });
+      renderHistorialTable();
+      renderProyectosTable();
+      setRoute('proyectos');
+    } catch (e){
+      toast({ title:'No se pudo confirmar', message: e?.message || 'Revisa los datos.', icon:'x-circle' });
+    }
+  });
+
+  // Ensure export doc uses saved id if exists
+  if (state.savedQuote?.id){
+    $('#msg4').textContent = `Cotización: ${state.savedQuote.id}`;
+  }
+
+  // Render chart inside export preview
+  renderExportDocChart({ root: document });
+}
+
+function renderExportDocChart({ root }){
+  const canvas = (root || document).querySelector('#exportChart');
+  if (!canvas || !window.Chart) return;
+
+  // Destroy previous chart
+  if (state.exportChart){
+    try{ state.exportChart.destroy(); } catch {}
+    state.exportChart = null;
+  }
+
+  const hist = (state.receipt?.historial || []).slice(-12);
+  const labels = (hist.length ? hist : Array.from({ length: 12 }, () => ({}))).map((_, i) => `P${i+1}`);
+  const consumos = hist.length ? hist.map(h => Number(h.kwh || 0)) : labels.map(() => 0);
+  const prodMensual = Number(state.quote?.produccionMensual || 0);
+  const produccion = labels.map(() => prodMensual);
+
+  state.exportChart = new window.Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Consumo (kWh)', data: consumos, tension: 0.25 },
+        { label: 'Producción estimada (kWh/mes)', data: produccion, tension: 0.15 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: 'rgba(0,0,0,0.70)' } },
+        tooltip: { enabled: true },
+      },
+      scales: {
+        x: { ticks: { color: 'rgba(0,0,0,0.65)' }, grid: { color: 'rgba(0,0,0,0.08)' } },
+        y: { ticks: { color: 'rgba(0,0,0,0.65)' }, grid: { color: 'rgba(0,0,0,0.08)' } },
+      }
+    }
+  });
+}
+
+function persistQuote(status){
+  if (!state.client.nombre) throw new Error('Falta el nombre del cliente.');
+  if (!state.receipt?.servicio) throw new Error('Falta el No. de servicio.');
+
+  // If already saved, just update status
+  if (state.savedQuote?.id){
+    const upd = updateQuote(state.savedQuote.id, {
+      status,
+      client: state.client,
+      receipt: state.receipt,
+      quote: state.quote,
+      params: state.params,
+      selectedTariff: state.selectedTariff,
+      overrides: state.overrides,
+      quoteMeta: state.quoteMeta,
+    });
+    state.savedQuote = upd;
+    return upd;
+  }
+
+  const q = saveQuote({
+    status,
+    client: state.client,
+    receipt: state.receipt,
+    quote: state.quote,
+    params: state.params,
+    selectedTariff: state.selectedTariff,
+    overrides: state.overrides,
+    quoteMeta: state.quoteMeta,
+  });
+  state.savedQuote = q;
+  return q;
+}
+
+async function exportPdf(){
+  if (!window.html2canvas || !window.jspdf){
+    toast({ title:'Exportación no disponible', message:'Faltan librerías de exportación en el navegador.', icon:'alert-triangle' });
+    return;
+  }
+
+  setPillStatus('Generando PDF…', 'busy');
+
+  try{
+    // Ensure we have an id
+    if (!state.savedQuote?.id){
+      // Save silently to keep consistent naming
+      state.savedQuote = persistQuote('Guardada');
+    }
+
+    const area = $('#exportDoc');
+    if (!area) throw new Error('No se encontró el documento de exportación.');
+
+    // Asegura que la gráfica del documento esté renderizada antes de capturar
+    renderExportDocChart({ root: document });
+
+    // Pequeña espera para asegurar que el canvas tenga contenido
+    await new Promise(r => setTimeout(r, 60));
+
+    const canvas = await window.html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 28;
+
+    const imgW = pageW - margin*2;
+    const imgH = canvas.height * (imgW / canvas.width);
+
+    let heightLeft = imgH;
+    let position = margin;
+
+    pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+    heightLeft -= (pageH - margin*2);
+
+    while (heightLeft > 0){
+      pdf.addPage();
+      position = margin - (imgH - heightLeft);
+      pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+      heightLeft -= (pageH - margin*2);
+    }
+
+    const name = (state.client.nombre || 'Cliente').trim().replace(/\s+/g,'_').slice(0, 36);
+    const filename = `Cotizacion_SECOM_${name}_${state.savedQuote.id}.pdf`;
+    pdf.save(filename);
+
+    toast({ title:'PDF generado', message:'Descarga iniciada.', icon:'download' });
+    setPillStatus('Listo', 'ok');
+  } catch (e){
+    console.error(e);
+    toast({ title:'No se pudo exportar', message: e?.message || 'Intenta de nuevo.', icon:'x-circle' });
+    setPillStatus('Error', 'error');
+  }
+}
+
+// ------------------------------
+// Exportación (Plantilla 5 páginas)
+// ------------------------------
+
+async function fetchAsDataUrl(url){
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`No se pudo cargar: ${url}`);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function exportTemplatePdfFromState(){
+  // Asegura id (para nombre de archivo)
+  if (!state.savedQuote?.id){
+    state.savedQuote = persistQuote('Guardada');
+  }
+  const id = state.savedQuote.id;
+  const name = (state.client?.nombre || 'Cliente').trim().replace(/\s+/g,'_').slice(0, 36);
+  await exportTemplatePdf({ id, filename: `Cotizacion_SECOM_${name}_${id}.pdf` });
+}
+
+async function exportTemplatePdfFromStoredQuote(q){
+  const id = q.id;
+  const name = (q.client?.nombre || q.receipt?.nombre || 'Cliente').trim().replace(/\s+/g,'_').slice(0, 36);
+  await exportTemplatePdf({ id, filename: `Cotizacion_SECOM_${name}_${id}.pdf` });
+}
+
+async function exportTemplatePdf({ id, filename }){
+  if (!window.jspdf){
+    toast({ title:'Exportación no disponible', message:'Falta jsPDF en el navegador.', icon:'alert-triangle' });
+    return;
+  }
+
+  setPillStatus('Generando PDF…', 'busy');
+
+  try{
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+
+    const urls = [
+      'assets/template/page1.jpg',
+      'assets/template/page2.jpg',
+      'assets/template/page3.jpg',
+      'assets/template/page4.jpg',
+      'assets/template/page5.jpg',
+    ];
+
+    for (let i=0; i<urls.length; i++){
+      const imgData = await fetchAsDataUrl(urls[i]);
+      if (i>0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
+
+      // (Opcional) se puede agregar folio/fecha si se desea en el futuro.
+    }
+
+    pdf.save(filename || `Cotizacion_SECOM_${id || 'SIN_ID'}.pdf`);
+    toast({ title:'PDF generado', message:'Descarga iniciada.', icon:'download' });
+    setPillStatus('Listo', 'ok');
+  } catch (e){
+    console.error(e);
+    toast({ title:'No se pudo exportar', message: e?.message || 'Intenta de nuevo.', icon:'x-circle' });
+    setPillStatus('Error', 'error');
+  }
+}
+
+function resetWizard(full=false){
+  state.wizardStep = 1;
+  if (full){
+    state.receiptFile = null;
+    state.receipt = null;
+    state.receiptCanvas = null;
+    state.client = { nombre:'', telefono:'', email:'', direccion:'' };
+    state.quote = null;
+    state.savedQuote = null;
+  }
+  // Si el wizard está montado, re-renderiza; si no, solo limpia estado.
+  if ($('#stepper')) buildStepper();
+  if ($('#wizardLeft')) renderWizard();
+  setPillStatus('Listo', 'ok');
+}
+
+// ------------------------------
+// Historial
+// ------------------------------
+
+function renderHistorialRoute(){
+  const root = $('#route-historial');
+  root.innerHTML = `
+    <div class="grid" style="gap:14px">
+      <div class="card">
+        <div class="row" style="align-items:center; gap:12px">
+          <div style="flex:1">
+            <div class="card__title">Lista de cotizaciones</div>
+            <div class="card__subtitle">Búsqueda y acciones rápidas</div>
+          </div>
+          <button class="btn btn--primary" id="btnNewQuoteFromList"><i data-lucide="plus"></i>Crear cotización</button>
+          <div class="field" style="max-width:320px">
+            <label>Buscar</label>
+            <input id="histSearch" placeholder="Cliente, tarifa o No. de servicio" />
+          </div>
+        </div>
+
+        <div style="overflow:auto; margin-top:10px">
+          <table class="table" id="historialTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Cliente</th>
+                <th>Tarifa</th>
+                <th>Periodo</th>
+                <th>Total</th>
+                <th>Estatus</th>
+                <th style="text-align:right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  $('#btnNewQuoteFromList')?.addEventListener('click', startNewQuoteFlow);
+  $('#histSearch').addEventListener('input', debounce(renderHistorialTable, 120));
+  renderHistorialTable();
+}
+
+function renderHistorialTable(){
+  const tbody = $('#historialTable tbody');
+  if (!tbody) return;
+
+  const term = ($('#histSearch')?.value || '').toLowerCase().trim();
+  const quotes = getQuotes();
+
+  const filtered = term ? quotes.filter(q => {
+    const c = (q.client?.nombre || q.receipt?.nombre || '').toLowerCase();
+    const t = (q.receipt?.tarifa || '').toLowerCase();
+    const s = (q.receipt?.servicio || '').toLowerCase();
+    return c.includes(term) || t.includes(term) || s.includes(term) || (q.id||'').toLowerCase().includes(term);
+  }) : quotes;
+
+  tbody.innerHTML = filtered.length ? filtered.map(q => {
+    const badge = q.status === 'Confirmada' ? 'badge--success' : 'badge--warn';
+    const periodo = q.receipt?.periodo?.raw || '';
+    const total = Number(q.quote?.inversion || q.quote?.totalInsumos || q.receipt?.totalAPagar || 0);
+
+    return `
+      <tr>
+        <td>${escapeHtml(q.id)}</td>
+        <td>${escapeHtml(q.client?.nombre || q.receipt?.nombre || '-')}</td>
+        <td>${escapeHtml(q.receipt?.tarifa || '-')}</td>
+        <td>${escapeHtml(periodo || '-')}</td>
+        <td>${formatCurrencyMXN(total)}</td>
+        <td><span class="badge ${badge}">${escapeHtml(q.status || '—')}</span></td>
+        <td>
+          <div class="actions">
+            <button class="btn" data-action="view" data-id="${q.id}"><i data-lucide="eye"></i>Ver</button>
+            <button class="btn" data-action="edit" data-id="${q.id}"><i data-lucide="pencil"></i>Editar</button>
+            <button class="btn" data-action="export" data-id="${q.id}"><i data-lucide="download"></i>PDF</button>
+            <button class="btn btn--success" data-action="confirm" data-id="${q.id}"><i data-lucide="check"></i>Proyecto</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr><td colspan="7" style="color:var(--muted)">Aún no hay cotizaciones guardadas.</td></tr>
+  `;
+
+  window.lucide?.createIcons();
+
+  tbody.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      const q = getQuotes().find(x => x.id === id);
+      if (!q) return;
+
+      if (action === 'view'){
+        openModalForQuote(q);
+      } else if (action === 'edit'){
+        openQuoteEditor(q);
+      } else if (action === 'export'){
+        exportPdfFromStoredQuote(q);
+      } else if (action === 'confirm'){
+        const project = saveProjectFromQuote({ ...q, status:'Confirmada' });
+        updateQuote(q.id, { status:'Confirmada' });
+        toast({ title:'Proyecto confirmado', message:`Se agregó a Proyectos (${project.id}).`, icon:'check' });
+        renderHistorialTable();
+        renderProyectosTable();
+        setRoute('proyectos');
+      }
+    });
+  });
+}
+
+function openModalForQuote(q){
+  const r = q.receipt || {};
+  const c = q.client || {};
+  const body = `
+    <div class="grid cols-2">
+      <div class="card" style="box-shadow:none">
+        <div class="card__title">Cliente</div>
+        <div class="help"><b>${escapeHtml(c.nombre || r.nombre || '-')}</b></div>
+        <div class="help">${escapeHtml(c.telefono || '-')} · ${escapeHtml(c.email || '-')}</div>
+        <div class="help" style="margin-top:8px">${escapeHtml(c.direccion || r.direccion || '-')}</div>
+      </div>
+      <div class="card" style="box-shadow:none">
+        <div class="card__title">Recibo</div>
+        <div class="help">No. de servicio: <b>${escapeHtml(r.servicio || '-')}</b></div>
+        <div class="help">Tarifa: <b>${escapeHtml(r.tarifa || '-')}</b></div>
+        <div class="help">Periodo: <b>${escapeHtml(r.periodo?.raw || '-')}</b></div>
+        <div class="help">Total a pagar: <b>${formatCurrencyMXN(r.totalAPagar || 0)}</b></div>
+      </div>
+    </div>
+
+    <div class="card" style="box-shadow:none; margin-top:12px">
+      <div class="card__title">Resumen de cotización</div>
+      <div class="row">
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">Potencia</div>
+          <div class="kpi__value">${Number(q.quote?.kwp || 0).toFixed(2)} kWp</div>
+        </div>
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">Paneles</div>
+          <div class="kpi__value">${escapeHtml(q.quote?.paneles || '—')}</div>
+        </div>
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">Inversión</div>
+          <div class="kpi__value">${formatCurrencyMXN(q.quote?.inversion || 0)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  openModal({
+    title: q.id,
+    subtitle: `Creada ${formatDateTime(q.createdAt)} · Estatus: ${q.status}`,
+    bodyHtml: body,
+    footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cerrar</button>
+      <button class="btn" id="mEdit"><i data-lucide="pencil"></i>Editar</button>
+      <button class="btn" id="mExport"><i data-lucide="download"></i>PDF</button>
+      <button class="btn btn--success" id="mProject"><i data-lucide="check"></i>Confirmar proyecto</button>
+    `
+  });
+
+  $('#mEdit')?.addEventListener('click', () => {
+    closeModal();
+    openQuoteEditor(q);
+  });
+  $('#mExport')?.addEventListener('click', () => exportPdfFromStoredQuote(q));
+  $('#mProject')?.addEventListener('click', () => {
+    const project = saveProjectFromQuote({ ...q, status:'Confirmada' });
+    updateQuote(q.id, { status:'Confirmada' });
+    toast({ title:'Proyecto confirmado', message:`Se agregó a Proyectos (${project.id}).`, icon:'check' });
+    closeModal();
+    renderHistorialTable();
+    renderProyectosTable();
+    setRoute('proyectos');
+  });
+}
+
+function openQuoteEditor(q){
+  // Cargar una cotización guardada en el flujo del cotizador
+  state.selectedTariff = guessTariffFromQuote(q);
+  // Abrir en la pantalla de edición del sistema (más cercano a "editar en pantalla")
+  state.wizardStep = 3;
+  state.receiptFile = null; // no se conserva el archivo
+  state.receiptCanvas = null;
+  state.receipt = structuredCloneSafe(q.receipt || {});
+  state.client = structuredCloneSafe(q.client || { nombre:'', telefono:'', email:'', direccion:'' });
+  state.params = structuredCloneSafe(q.params || state.params);
+  state.quote = structuredCloneSafe(q.quote || null);
+  state.overrides = structuredCloneSafe(q.overrides || { paneles: null });
+  state.quoteMeta = structuredCloneSafe(q.quoteMeta || q.receipt?.instalacion || state.quoteMeta);
+  state.savedQuote = q;
+
+  renderCotizadorRoute();
+  setRoute('cotizador');
+  gotoStep(3);
+  toast({ title:'Edición', message:`Cotización ${q.id} cargada para editar.`, icon:'pencil' });
+}
+
+function guessTariffFromQuote(q){
+  if (q?.selectedTariff?.key){
+    const found = TARIFFS.find(t => t.key === q.selectedTariff.key);
+    if (found) return found;
+  }
+  const tp = q?.receipt?.tipoPeriodo || '';
+  const isBim = String(tp).toLowerCase().includes('bim');
+  // Prefer the family inferred from the menu (if saved) else default to Doméstica
+  const candidates = TARIFFS.filter(t => t.kind !== 'cashvolt');
+  const pref = candidates.find(t => String(t.label||'').toLowerCase().includes('dom')) || candidates[0];
+  if (!pref) return candidates[0] || null;
+  // Map by period
+  const match = candidates.find(t => (isBim ? t.periodo === 'Bimestral' : t.periodo === 'Mensual') && String(t.label||'').toLowerCase().includes('doméstica'));
+  return match || pref;
+}
+
+function structuredCloneSafe(obj){
+  try{ return structuredClone(obj); } catch { return JSON.parse(JSON.stringify(obj || {})); }
+}
+
+async function exportPdfFromStoredQuote(q){
+  // Create a hidden export area in modal and reuse export pipeline
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '-9999px';
+  wrapper.style.top = '0';
+  wrapper.style.width = '800px';
+
+  // Recalcular para reflejar insumos y/o cambios guardados en el recibo
+  const recomputed = computeQuote(q.receipt || {}, q.client || {}, q.params || {}, q.overrides || {});
+  const html = buildExportHtml({ ...recomputed, receipt: q.receipt, client: q.client, params: q.params, id: q.id, selectedTariff: q.selectedTariff });
+  wrapper.innerHTML = html;
+  document.body.appendChild(wrapper);
+
+  try{
+    setPillStatus('Generando PDF…', 'busy');
+    const area = wrapper.querySelector('#exportDoc');
+
+    // Render chart into the export doc
+    const chartCanvas = wrapper.querySelector('#exportChart');
+    let tmpChart = null;
+    if (chartCanvas && window.Chart){
+      const hist = (q.receipt?.historial || []).slice(-12);
+      const labels = (hist.length ? hist : Array.from({ length: 12 }, () => ({}))).map((_, i) => `P${i+1}`);
+      const consumos = hist.length ? hist.map(h => Number(h.kwh || 0)) : labels.map(() => 0);
+      const prodMensual = Number(recomputed?.produccionMensual || 0);
+      const produccion = labels.map(() => prodMensual);
+      tmpChart = new window.Chart(chartCanvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Consumo (kWh)', data: consumos, tension: 0.25 },
+            { label: 'Producción estimada (kWh/mes)', data: produccion, tension: 0.15 },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: 'rgba(0,0,0,0.70)' } } },
+          scales: {
+            x: { ticks: { color: 'rgba(0,0,0,0.65)' }, grid: { color: 'rgba(0,0,0,0.08)' } },
+            y: { ticks: { color: 'rgba(0,0,0,0.65)' }, grid: { color: 'rgba(0,0,0,0.08)' } },
+          }
+        }
+      });
+    }
+
+    // Guarda referencia para limpieza
+    wrapper.__tmpChart = tmpChart;
+
+    await new Promise(r => setTimeout(r, 60));
+
+    const canvas = await window.html2canvas(area, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 28;
+
+    const imgW = pageW - margin*2;
+    const imgH = canvas.height * (imgW / canvas.width);
+
+    let heightLeft = imgH;
+    let position = margin;
+
+    pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+    heightLeft -= (pageH - margin*2);
+    while (heightLeft > 0){
+      pdf.addPage();
+      position = margin - (imgH - heightLeft);
+      pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+      heightLeft -= (pageH - margin*2);
+    }
+    const name = (q.client?.nombre || 'Cliente').trim().replace(/\s+/g,'_').slice(0, 36);
+    pdf.save(`Cotizacion_SECOM_${name}_${q.id}.pdf`);
+
+    toast({ title:'PDF generado', message:'Descarga iniciada.', icon:'download' });
+    setPillStatus('Listo', 'ok');
+  } catch (e){
+    console.error(e);
+    toast({ title:'No se pudo exportar', message: e?.message || 'Intenta de nuevo.', icon:'x-circle' });
+    setPillStatus('Error', 'error');
+  } finally {
+    try{ wrapper.__tmpChart?.destroy(); } catch {}
+    wrapper.remove();
+  }
+}
+
+// ------------------------------
+// Proyectos
+// ------------------------------
+
+function renderProyectosRoute(){
+  const root = $('#route-proyectos');
+  root.innerHTML = `
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <div style="flex:1">
+          <div class="card__title">Proyectos</div>
+          <div class="card__subtitle">Gestión de proyectos</div>
+        </div>
+        <button class="btn btn--primary" id="btnNewProject"><i data-lucide="plus"></i>Agregar proyecto</button>
+        <div class="field" style="max-width:320px">
+          <label>Buscar</label>
+          <input id="projSearch" placeholder="Cliente, estatus o No. de servicio" />
+        </div>
+      </div>
+
+      <div style="overflow:auto; margin-top:10px">
+        <table class="table" id="proyectosTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Cliente</th>
+              <th>No. de servicio</th>
+              <th>Potencia</th>
+              <th>Inversión</th>
+              <th>Estatus</th>
+              <th style="text-align:right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  $('#projSearch').addEventListener('input', debounce(renderProyectosTable, 120));
+  $('#btnNewProject')?.addEventListener('click', () => openProjectEditor());
+  renderProyectosTable();
+}
+
+function renderProyectosTable(){
+  const tbody = $('#proyectosTable tbody');
+  if (!tbody) return;
+
+  const term = ($('#projSearch')?.value || '').toLowerCase().trim();
+  const projects = getProjects();
+  const filtered = term ? projects.filter(p => {
+    const c = (p.client?.nombre || p.receipt?.nombre || '').toLowerCase();
+    const s = (p.receipt?.servicio || '').toLowerCase();
+    const st = (p.status || '').toLowerCase();
+    return c.includes(term) || s.includes(term) || st.includes(term) || (p.id||'').toLowerCase().includes(term);
+  }) : projects;
+
+  tbody.innerHTML = filtered.length ? filtered.map(p => {
+    const badge = 'badge--success';
+    return `
+      <tr>
+        <td>${escapeHtml(p.id)}</td>
+        <td>${escapeHtml(p.client?.nombre || p.receipt?.nombre || '-')}</td>
+        <td>${escapeHtml(p.receipt?.servicio || '-')}</td>
+        <td>${Number(p.quote?.kwp || 0).toFixed(2)} kWp</td>
+        <td>${formatCurrencyMXN(p.quote?.inversion || 0)}</td>
+        <td><span class="badge ${badge}">${escapeHtml(p.status || '—')}</span></td>
+        <td>
+          <div class="actions">
+            <button class="btn" data-action="view" data-id="${p.id}"><i data-lucide="eye"></i>Ver</button>
+            <button class="btn" data-action="edit" data-id="${p.id}"><i data-lucide="pencil"></i>Editar</button>
+            <button class="btn" data-action="status" data-id="${p.id}"><i data-lucide="refresh-cw"></i>Estatus</button>
+            <button class="btn btn--danger" data-action="delete" data-id="${p.id}"><i data-lucide="trash-2"></i>Eliminar</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr><td colspan="7" style="color:var(--muted)">Aún no hay proyectos confirmados.</td></tr>
+  `;
+
+  window.lucide?.createIcons();
+
+  tbody.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      const p = getProjects().find(x => x.id === id);
+      if (!p) return;
+
+      if (action === 'view'){
+        openModalForProject(p);
+      } else if (action === 'edit'){
+        openProjectEditor(p);
+      } else if (action === 'status'){
+        openStatusPicker(p);
+      } else if (action === 'delete'){
+        confirmDeleteProject(p);
+      }
+    });
+  });
+}
+
+function confirmDeleteProject(p){
+  openModal({
+    title: 'Eliminar proyecto',
+    subtitle: p.id,
+    bodyHtml: `<div class="help">Se eliminará el proyecto <b>${escapeHtml(p.id)}</b>. Esta acción no se puede deshacer.</div>`,
+    footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--danger" id="btnDelProj"><i data-lucide="trash-2"></i>Eliminar</button>
+    `
+  });
+
+  $('#btnDelProj')?.addEventListener('click', () => {
+    removeProject(p.id);
+    toast({ title:'Proyecto eliminado', message:p.id, icon:'trash-2' });
+    closeModal();
+    renderProyectosTable();
+  });
+}
+
+function openProjectEditor(project=null){
+  const isEdit = Boolean(project);
+  const quotes = getQuotes();
+  const qOptions = quotes.map(q => {
+    const cliente = q.client?.nombre || q.receipt?.nombre || 'Cliente';
+    const total = formatCurrencyMXN(q.receipt?.totalAPagar || 0);
+    return `<option value="${escapeAttr(q.id)}">${escapeHtml(q.id)} · ${escapeHtml(cliente)} · ${total}</option>`;
+  }).join('');
+
+  const p = project || {};
+  const preQ = p.quoteId || '';
+
+  const body = `
+    <div class="grid cols-2">
+      <div class="field" style="grid-column: span 2">
+        <label>Cotización asociada (opcional)</label>
+        <select id="pfQuote" ${isEdit ? 'disabled' : ''}>
+          <option value="">Sin cotización</option>
+          ${qOptions}
+        </select>
+        <div class="help" style="margin-top:6px">Si seleccionas una cotización, los datos se cargarán automáticamente.</div>
+      </div>
+
+      <div class="field">
+        <label>Cliente</label>
+        <input id="pfCliente" value="${escapeAttr(p.client?.nombre || p.receipt?.nombre || '')}" placeholder="Nombre del cliente" />
+      </div>
+      <div class="field">
+        <label>No. de servicio</label>
+        <input id="pfServicio" value="${escapeAttr(p.receipt?.servicio || '')}" placeholder="###########" />
+      </div>
+
+      <div class="field">
+        <label>Potencia (kWp)</label>
+        <input id="pfKwp" type="number" step="0.01" min="0" value="${escapeAttr(String(p.quote?.kwp || 0))}" />
+      </div>
+      <div class="field">
+        <label>Inversión (MXN)</label>
+        <input id="pfInv" type="number" step="1" min="0" value="${escapeAttr(String(p.quote?.inversion || 0))}" />
+      </div>
+
+      <div class="field" style="grid-column: span 2">
+        <label>Estatus</label>
+        <select id="pfStatus">
+          ${['En planeación','En instalación','En trámite','Completado','Pausado'].map(s => `<option ${p.status===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="field" style="grid-column: span 2">
+        <label>Notas</label>
+        <textarea id="pfNotes" rows="3" placeholder="Notas del proyecto">${escapeHtml(p.notes || '')}</textarea>
+      </div>
+    </div>
+  `;
+
+  openModal({
+    title: isEdit ? 'Editar proyecto' : 'Agregar proyecto',
+    subtitle: isEdit ? p.id : 'Completa la información',
+    bodyHtml: body,
+    footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--primary" id="pfSave"><i data-lucide="save"></i>Guardar</button>
+    `
+  });
+
+  // Prefill quote selection
+  if (!isEdit && preQ){
+    const sel = $('#pfQuote');
+    if (sel) sel.value = preQ;
+  }
+
+  const applyFromQuote = (qid) => {
+    const q = quotes.find(x => x.id === qid);
+    if (!q) return;
+    $('#pfCliente').value = q.client?.nombre || q.receipt?.nombre || '';
+    $('#pfServicio').value = q.receipt?.servicio || '';
+    $('#pfKwp').value = Number(q.quote?.kwp || 0).toFixed(2);
+    $('#pfInv').value = Math.round(Number(q.quote?.inversion || 0));
+  };
+
+  $('#pfQuote')?.addEventListener('change', (e) => {
+    const qid = e.target.value;
+    if (qid) applyFromQuote(qid);
+  });
+
+  // Save
+  $('#pfSave')?.addEventListener('click', () => {
+    const qid = $('#pfQuote')?.value || '';
+    const status = $('#pfStatus').value;
+    const notes = $('#pfNotes').value.trim();
+    const cliente = $('#pfCliente').value.trim();
+    const servicio = $('#pfServicio').value.trim();
+    const kwp = Number($('#pfKwp').value || 0);
+    const inv = Number($('#pfInv').value || 0);
+
+    if (!cliente){
+      toast({ title:'Falta información', message:'Captura el nombre del cliente.', icon:'alert-triangle' });
+      return;
+    }
+
+    if (isEdit){
+      updateProject(p.id, {
+        status,
+        notes,
+        client: { ...(p.client||{}), nombre: cliente },
+        receipt: { ...(p.receipt||{}), servicio },
+        quote: { ...(p.quote||{}), kwp, inversion: inv },
+      });
+      toast({ title:'Proyecto actualizado', message:p.id, icon:'check-circle' });
+      closeModal();
+      renderProyectosTable();
+      return;
+    }
+
+    // Create
+    let created;
+    if (qid){
+      const q = quotes.find(x => x.id === qid);
+      if (!q){
+        toast({ title:'Cotización no encontrada', message:'Selecciona una cotización válida.', icon:'alert-triangle' });
+        return;
+      }
+      created = saveProjectFromQuote({ ...q, status });
+      updateProject(created.id, { status, notes });
+      updateQuote(q.id, { status: q.status === 'Confirmada' ? 'Confirmada' : q.status });
+    } else {
+      created = saveProject({
+        status,
+        notes,
+        client: { nombre: cliente },
+        receipt: { servicio },
+        quote: { kwp, inversion: inv },
+      });
+    }
+
+    toast({ title:'Proyecto guardado', message:created.id, icon:'briefcase' });
+    closeModal();
+    renderProyectosTable();
+  });
+}
+
+function openModalForProject(p){
+  const r = p.receipt || {};
+  const c = p.client || {};
+
+  const body = `
+    <div class="grid cols-2">
+      <div class="card" style="box-shadow:none">
+        <div class="card__title">Cliente</div>
+        <div class="help"><b>${escapeHtml(c.nombre || r.nombre || '-')}</b></div>
+        <div class="help">${escapeHtml(c.telefono || '-')} · ${escapeHtml(c.email || '-')}</div>
+        <div class="help" style="margin-top:8px">${escapeHtml(c.direccion || r.direccion || '-')}</div>
+      </div>
+      <div class="card" style="box-shadow:none">
+        <div class="card__title">Sistema</div>
+        <div class="help">Potencia: <b>${Number(p.quote?.kwp || 0).toFixed(2)} kWp</b></div>
+        <div class="help">Paneles: <b>${escapeHtml(p.quote?.paneles || '—')}</b></div>
+        <div class="help">Inversión: <b>${formatCurrencyMXN(p.quote?.inversion || 0)}</b></div>
+        <div class="help">Ahorro mensual: <b>${formatCurrencyMXN(p.quote?.ahorroMensual || 0)}</b></div>
+      </div>
+    </div>
+
+    <div class="card" style="box-shadow:none; margin-top:12px">
+      <div class="card__title">Recibo</div>
+      <div class="row">
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">No. de servicio</div>
+          <div class="kpi__value" style="font-size:13px">${escapeHtml(r.servicio || '-')}</div>
+        </div>
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">Tarifa</div>
+          <div class="kpi__value" style="font-size:13px">${escapeHtml(r.tarifa || '-')}</div>
+        </div>
+        <div class="kpi" style="flex:1">
+          <div class="kpi__label">Total</div>
+          <div class="kpi__value" style="font-size:13px">${formatCurrencyMXN(r.totalAPagar || 0)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  openModal({
+    title: p.id,
+    subtitle: `Creado ${formatDateTime(p.createdAt)} · Estatus: ${p.status}`,
+    bodyHtml: body,
+    footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cerrar</button>
+      <button class="btn" id="pStatus"><i data-lucide="refresh-cw"></i>Cambiar estatus</button>
+    `
+  });
+
+  $('#pStatus')?.addEventListener('click', () => openStatusPicker(p));
+}
+
+function openStatusPicker(p){
+  const options = ['En planeación', 'En instalación', 'En trámite', 'Completado', 'Pausado'];
+  const body = `
+    <div class="help">Selecciona el nuevo estatus para el proyecto <b>${escapeHtml(p.id)}</b>.</div>
+    <div class="grid" style="margin-top:12px">
+      ${options.map(o => `
+        <button class="btn" data-status="${escapeAttr(o)}" style="justify-content:flex-start">
+          <i data-lucide="dot"></i>${escapeHtml(o)}
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  openModal({
+    title: 'Cambiar estatus',
+    subtitle: escapeHtml(p.client?.nombre || p.receipt?.nombre || ''),
+    bodyHtml: body,
+    footHtml: `<button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>`
+  });
+
+  $$('#modalBody button[data-status]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const status = btn.dataset.status;
+      updateProject(p.id, { status });
+      toast({ title:'Estatus actualizado', message:`${p.id} · ${status}`, icon:'check-circle' });
+      closeModal();
+      renderProyectosTable();
+    });
+  });
+}
+
+// ------------------------------
+// Opciones
+// ------------------------------
+
+function renderOpcionesRoute(){
+  const root = $('#route-opciones');
+  const theme = document.documentElement.dataset.theme || 'dark';
+
+  root.innerHTML = `
+    <div class="grid" style="gap:14px">
+      <div class="card">
+        <div class="card__title">Apariencia</div>
+        <div class="card__subtitle">Tema del sistema</div>
+
+        <div class="row" style="align-items:center">
+          <div class="help" style="flex:1">
+            Cambia entre modo claro y modo oscuro. La preferencia se guarda en este equipo.
+          </div>
+          <div class="field" style="max-width:240px">
+            <label>Tema</label>
+            <select id="themeSelect">
+              <option value="dark" ${theme==='dark'?'selected':''}>Dark mode</option>
+              <option value="light" ${theme==='light'?'selected':''}>Light mode</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">Datos</div>
+        <div class="card__subtitle">Administración de historial y proyectos</div>
+
+        <div class="row" style="align-items:center">
+          <div class="help" style="flex:1">
+            Puedes limpiar el historial y proyectos almacenados localmente.
+          </div>
+          <button class="btn btn--danger" id="btnReset"><i data-lucide="trash-2"></i>Limpiar todo</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  $('#themeSelect').addEventListener('change', (e) => {
+    const t = e.target.value;
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem('secom_theme', t);
+    toast({ title:'Tema actualizado', message:`Modo ${t === 'dark' ? 'oscuro' : 'claro'} activado.`, icon:'palette' });
+
+    // If a chart exists, re-render to refresh tick colors
+    if (state.route === 'cotizador' && state.wizardStep === 3) renderChart();
+  });
+
+  $('#btnReset').addEventListener('click', () => {
+    openModal({
+      title: 'Limpiar datos',
+      subtitle: 'Acción irreversible',
+      bodyHtml: `
+        <div class="help">Se eliminarán todas las cotizaciones del historial y todos los proyectos guardados en este equipo.</div>
+        <div class="help" style="margin-top:10px">¿Deseas continuar?</div>
+      `,
+      footHtml: `
+        <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+        <button class="btn btn--danger" id="confirmReset"><i data-lucide="trash-2"></i>Limpiar</button>
+      `
+    });
+
+    $('#confirmReset')?.addEventListener('click', () => {
+      resetAllData();
+      toast({ title:'Datos eliminados', message:'Historial y proyectos han sido limpiados.', icon:'check-circle' });
+      closeModal();
+      renderHistorialTable();
+      renderProyectosTable();
+      resetWizard(true);
+      setRoute('cotizador');
+    });
+  });
+
+  window.lucide?.createIcons();
+}
+
+// ------------------------------
+// Small escaping helpers
+// ------------------------------
+
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[ch]));
+}
+
+function escapeAttr(s){
+  return escapeHtml(s).replace(/\n/g, ' ');
+}
+
+function validateReceiptAgainstSelection(receipt, selected){
+  if (!receipt || !selected) return { ok:true, message:'Listo para continuar.' };
+
+  // Validación de periodo (mensual/bimestral)
+  const selPeriodo = selected.periodo;
+  const recPeriodo = receipt.tipoPeriodo;
+  if (selPeriodo && recPeriodo && selPeriodo !== recPeriodo){
+    return {
+      ok:false,
+      message:`El tipo seleccionado es ${selPeriodo}, pero el recibo está marcado como ${recPeriodo}. Verifica el periodo facturado.`
+    };
+  }
+
+  return { ok:true, message:'Tarifa y periodo verificados.' };
+}
