@@ -1156,3 +1156,115 @@ button, input, select, textarea{
         transition:none !important;
     }
 }
+.package-grid{
+    display:grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:12px;
+}
+.package-card{
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:var(--card);
+    color:inherit;
+    padding:14px;
+    text-align:left;
+    cursor:pointer;
+    transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.package-card:hover{
+    transform:translateY(-1px);
+    border-color:var(--accent);
+}
+.package-card.is-selected{
+    border-color:var(--accent);
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.package-card__head{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    align-items:flex-start;
+}
+.package-card__title{
+    font-weight:800;
+}
+.package-card__badge{
+    font-size:11px;
+    color:var(--muted);
+    margin-top:4px;
+}
+.package-card__total{
+    font-weight:800;
+    white-space:nowrap;
+}
+.package-card__desc{
+    margin-top:10px;
+    font-size:13px;
+    color:var(--muted);
+    line-height:1.45;
+}
+.package-card__meta{
+    margin-top:10px;
+    font-size:12px;
+    color:var(--muted);
+}
+.package-preview{
+    border:1px dashed var(--line);
+    border-radius:14px;
+    padding:12px;
+    background:color-mix(in srgb, var(--card) 84%, transparent);
+}
+.package-preview-list{
+    display:grid;
+    gap:8px;
+}
+.package-preview-item,
+.review-row{
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    align-items:flex-start;
+    padding:8px 0;
+    border-bottom:1px solid var(--line);
+}
+.package-preview-item:last-child,
+.review-row:last-child{
+    border-bottom:none;
+}
+.review-panel{
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px 14px;
+    background:color-mix(in srgb, var(--card) 88%, transparent);
+}
+.review-row span,
+.package-preview-item span{
+    color:var(--muted);
+    max-width:48%;
+}
+.review-row b,
+.package-preview-item b{
+    text-align:right;
+    font-weight:700;
+}
+.review-alert,
+.review-ok{
+    border-radius:12px;
+    padding:10px 12px;
+    font-size:13px;
+    margin-bottom:8px;
+}
+.review-alert{
+    border:1px solid rgba(245,158,11,0.25);
+    background:rgba(245,158,11,0.08);
+}
+.review-ok{
+    border:1px solid rgba(34,197,94,0.22);
+    background:rgba(34,197,94,0.08);
+}
+
+@media (max-width: 980px){
+    .package-grid{
+        grid-template-columns:1fr;
+    }
+}

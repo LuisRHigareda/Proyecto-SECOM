@@ -1,3 +1,4 @@
+import { loadUserPreferences } from './preferences.js';
 import { parseMoneyToNumber, parseIntSafe } from './utils.js';
 const MONTHS = {
     ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
@@ -43,6 +44,70 @@ function cleanLine(line) {
             .trim();
 }
 
+const ADDRESS_HINTS = [
+    'CALLE', 'AV', 'AV.', 'AVENIDA', 'BLVD', 'BOULEVARD', 'COL', 'COLONIA',
+    'FRACC', 'FRACC.', 'SECCION', 'SECC', 'MANZANA', 'MZ', 'LOTE', 'LT', 'NUM',
+    'NO', 'N°', 'CP', 'C.P.', 'INT', 'EXT', 'DEPTO', 'PRIV', 'PASEO', 'CARRETERA',
+    'KM', 'RESIDENCIAL', 'VILLA', 'SECTOR', 'LOCALIDAD', 'MUNICIPIO'
+];
+
+function normalizeServiceCandidate(raw) {
+    return String(raw || '')
+            .toUpperCase()
+            .replace(/[OQ]/g, '0')
+            .replace(/[IL]/g, '1')
+            .replace(/S/g, '5')
+            .replace(/B/g, '8')
+            .replace(/Z/g, '2')
+            .replace(/[^0-9]/g, '');
+}
+
+function extractBestServiceFromText(raw) {
+    const candidates = (String(raw || '').match(/[0-9OQILSBZ\s-]{8,22}/g) || [])
+            .map(normalizeServiceCandidate)
+            .filter(v => v.length >= 8 && v.length <= 15)
+            .sort((a, b) => b.length - a.length);
+    return candidates[0] || '';
+}
+
+function looksLikeNameCandidate(line) {
+    const raw = cleanLine(line);
+    const up = normalizeUpper(raw);
+    if (!raw || raw.length < 6 || raw.length > 80)
+        return false;
+    if (isStopLabel(raw))
+        return false;
+    if (/\$\s*\d/.test(raw))
+        return false;
+    if (/(RFC|TOTAL|PAGO|TARIFA|SERVICIO|PERIODO|MEDIDOR|HILOS|LECTURA|COMISION FEDERAL|CFE)/.test(up))
+        return false;
+    if ((raw.match(/\d/g) || []).length > 2)
+        return false;
+    const words = raw.split(/\s+/).filter(Boolean);
+    return words.length >= 2 && words.length <= 8;
+}
+
+function scoreAddressLine(line) {
+    const raw = cleanLine(line);
+    const up = normalizeUpper(raw);
+    if (!raw || isStopLabel(raw))
+        return -100;
+    if (/\$\s*\d/.test(raw))
+        return -50;
+    let score = 0;
+    if ((raw.match(/\d/g) || []).length >= 1)
+        score += 3;
+    if (ADDRESS_HINTS.some(h => up.includes(h)))
+        score += 3;
+    if (/\,/.test(raw))
+        score += 1;
+    if (/\b\d{5}\b/.test(raw))
+        score += 2;
+    if (raw.length >= 10)
+        score += 1;
+    return score;
+}
+
 function isStopLabel(line) {
     const up = normalizeUpper(line);
     return [
@@ -75,12 +140,10 @@ function looksLikeAddressLine(line) {
         return false;
     if (/\$\s*\d/.test(raw))
         return false;
-    if (up.includes('TOTAL A PAGAR'))
-        return false;
-    if (up.includes('ESTE GRAFICO'))
+    if (up.includes('TOTAL A PAGAR') || up.includes('ESTE GRAFICO'))
         return false;
 
-    return true;
+    return scoreAddressLine(raw) >= 2;
 }
 function parsePeriodo(text) {
     const upper = normalizeUpper(text);
@@ -123,83 +186,87 @@ function canonicalPeriodLabel(value) {
 }
 
 function parseNombreDireccion(text) {
+    const lines = buildLines(text).slice(0, 45);
+
+    const labeledName = normalizeText(text).match(/(?:NOMBRE|CLIENTE|TITULAR)[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]{5,80})/i);
+    if (labeledName) {
+        const possibleAddress = lines.filter(looksLikeAddressLine).slice(0, 3).join(' ').trim();
+        return { nombre: cleanLine(labeledName[1]), direccion: possibleAddress };
+    }
+
+    let best = { score: -999, nombre: '', direccion: '' };
+
+    for (let i = 0; i < lines.length; i++) {
+        const current = cleanLine(lines[i]);
+        if (!looksLikeNameCandidate(current))
+            continue;
+
+        const addressLines = [];
+        let score = 2;
+
+        for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+            const candidate = cleanLine(lines[j]);
+            if (!candidate)
+                continue;
+            if (isStopLabel(candidate))
+                break;
+            const lineScore = scoreAddressLine(candidate);
+            if (lineScore >= 2) {
+                addressLines.push(candidate.replace(/\$.*$/, '').trim());
+                score += lineScore;
+            } else if (addressLines.length) {
+                break;
+            }
+        }
+
+        if (addressLines.length >= 1)
+            score += addressLines.length * 2;
+        if ((current.match(/\b[A-ZÁÉÍÓÚÑ]{2,}\b/g) || []).length >= 2)
+            score += 2;
+
+        const direccion = addressLines.join(' ').replace(/\s+/g, ' ').trim();
+        if (score > best.score) {
+            best = { score, nombre: current.replace(/\$.*$/, '').trim(), direccion };
+        }
+    }
+
+    if (best.score > 0)
+        return { nombre: best.nombre, direccion: best.direccion };
+
+    return { nombre: '', direccion: '' };
+}
+function parseServicio(text) {
     const lines = buildLines(text);
-    const upperLines = lines.map(l => normalizeUpper(l));
-
-    const blacklist = [
-        'COMISION FEDERAL DE ELECTRICIDAD',
-        'COMISION FEDERAL',
-        'RFC:',
-        'AV. PASEO DE LA REFORMA',
-        'ALCALDIA',
-        'CIUDAD DE MEXICO',
-        'TOTAL A PAGAR',
-        'LECTURA ACTUAL',
-        'LECTURA ANTERIOR',
-        'CONCEPTO',
-        'PERIODO FACTURADO',
-        'NO DE SERVICIO',
-        'NO. DE SERVICIO',
-        'CUENTA:',
-        'TARIFA:',
-        'DESCARGA NUESTRA APP',
-        'APP AUTORIZADA'
-    ];
-
-    let nombre = '';
-    let nombreIndex = -1;
+    const labels = ['NO DE SERVICIO', 'NO. DE SERVICIO', 'NUMERO DE SERVICIO', 'NÚMERO DE SERVICIO'];
 
     for (let i = 0; i < lines.length; i++) {
         const raw = cleanLine(lines[i]);
-        const up = upperLines[i];
-
-        if (isStopLabel(raw))
-            break;
-        if (blacklist.some(x => up.includes(x)))
-            continue;
-        if (/\d/.test(up))
+        const up = normalizeUpper(raw);
+        if (!labels.some(label => up.includes(label)))
             continue;
 
-        const words = up.split(/\s+/).filter(Boolean);
-        if (words.length >= 3 && words.length <= 8) {
-            nombre = raw
-                    .replace(/\$.*$/, '')
-                    .replace(/\bPAS\b.*$/i, '')
-                    .trim();
-            nombreIndex = i;
-            break;
+        const sameLineText = raw.replace(/.*?(?:NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO)[:\s]*/i, '');
+        const sameLine = extractBestServiceFromText(sameLineText);
+        if (sameLine)
+            return sameLine;
+
+        for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
+            const nextCandidate = extractBestServiceFromText(lines[j]);
+            if (nextCandidate)
+                return nextCandidate;
         }
     }
 
-    const addressLines = [];
-
-    if (nombreIndex >= 0) {
-        for (let i = nombreIndex + 1; i < Math.min(lines.length, nombreIndex + 6); i++) {
-            const raw = cleanLine(lines[i]);
-            if (!raw)
-                continue;
-            if (isStopLabel(raw))
-                break;
-            if (!looksLikeAddressLine(raw))
-                continue;
-
-            const cleaned = raw.replace(/\$.*$/, '').trim();
-            if (cleaned)
-                addressLines.push(cleaned);
-        }
-    }
-
-    return {
-        nombre,
-        direccion: addressLines.join(' ').replace(/\s+/g, ' ').trim()
-    };
-}
-
-function parseServicio(text) {
     const upper = normalizeUpper(text);
-    return upper.match(/NO\.?\s*DE\s*SERVICIO[:\s]*([0-9]{8,15})/)?.[1] || '';
-}
+    const nearLabel = upper.match(/(?:NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO)[:\s]*([0-9OQILSBZ\s-]{8,22})/);
+    if (nearLabel) {
+        const candidate = normalizeServiceCandidate(nearLabel[1]);
+        if (candidate.length >= 8 && candidate.length <= 15)
+            return candidate;
+    }
 
+    return extractBestServiceFromText(text) || '';
+}
 function parseTarifa(text) {
     const lines = buildLines(text);
     const allowed = ['1', '1A', '1B', '1C', '1D', '1E', '1F', 'DAC', 'PDBT', 'GDBT', 'GDMTO', 'GDMTH'];
@@ -549,6 +616,59 @@ async function extractPdfTextByPage(pdf, onProgress) {
     return pages;
 }
 
+function createHighContrastCanvas(source) {
+    const canvas = document.createElement('canvas');
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext('2d', {alpha: false});
+    ctx.drawImage(source, 0, 0);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        const val = gray > 175 ? 255 : gray < 90 ? 0 : gray;
+        data[i] = data[i + 1] = data[i + 2] = val;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+}
+
+function scoreRecognizedText(text) {
+    const up = normalizeUpper(text);
+    const parsedName = parseNombreDireccion(text);
+    let score = 0;
+    if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO')) score += 5;
+    if (up.includes('PERIODO FACTURADO')) score += 4;
+    if (up.includes('TOTAL A PAGAR')) score += 4;
+    if (up.includes('TARIFA')) score += 3;
+    if (parseServicio(text)) score += 5;
+    if (parsedName.direccion) score += 4;
+    if (parsedName.nombre) score += 3;
+    return score + Math.min(6, Math.round(String(text || '').length / 250));
+}
+
+async function runBestOcrVariant(canvas, pageIndex, onProgress) {
+    const prefs = loadUserPreferences();
+    const variants = [canvas];
+    if (prefs?.ocr?.preferHighContrast !== false) {
+        variants.push(createHighContrastCanvas(canvas));
+    }
+    let bestText = '';
+    let bestScore = -Infinity;
+    for (const variant of variants) {
+        const text = await runOcrOnCanvas(variant, pageIndex, onProgress);
+        const score = scoreRecognizedText(text);
+        if (score > bestScore) {
+            bestScore = score;
+            bestText = text;
+        }
+        if (bestScore >= 18 && prefs?.ocr?.aggressiveMode === false) {
+            break;
+        }
+    }
+    return bestText;
+}
+
 async function runOcrOnCanvas(canvas, pageIndex, onProgress) {
     if (!window.Tesseract)
         return '';
@@ -598,7 +718,7 @@ async function pdfToTextAndPreview(file, { onProgress } = {}){
         for (let i = 1; i <= pagesToOcr; i++) {
             const page = await pdf.getPage(i);
             const canvas = await renderPageToCanvas(page, 2.0);
-            const ocrText = await runOcrOnCanvas(canvas, i, onProgress);
+            const ocrText = await runBestOcrVariant(canvas, i, onProgress);
             ocrTexts.push(ocrText);
         }
 
@@ -716,9 +836,59 @@ export function parseCfeReceiptText(text) {
     return parseCfeReceiptTextFromPages(text, text, text);
 }
 
+export function createEmptyReceiptData(selectedTariff = null, rawText = '') {
+    return {
+        fuente: 'CFE',
+        tarifa: '',
+        servicio: '',
+        totalAPagar: 0,
+        periodo: {raw: '', start: null, end: null, days: 0},
+        tipoPeriodo: selectedTariff?.periodo || '',
+        nombre: '',
+        direccion: '',
+        consumoPeriodo: 0,
+        historial: [],
+        suministro: 0,
+        iva: 16,
+        dap: 0,
+        costoBase: 0,
+        ahorroEstimado: 0,
+        hilos: '',
+        estado: '',
+        rawText: rawText || '',
+        instalacion: {},
+        insumos: [],
+        impuestosPct: 0.16
+    };
+}
+
+async function imageFileToTextAndPreview(file, { onProgress } = {}) {
+    const imageBitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    const maxSide = 1800;
+    const scale = Math.min(1, maxSide / Math.max(imageBitmap.width, imageBitmap.height));
+    canvas.width = Math.max(1, Math.round(imageBitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(imageBitmap.height * scale));
+    ctx.drawImage(imageBitmap, 0, 0, canvas.width, canvas.height);
+
+    if (onProgress) {
+        onProgress({ message: 'Aplicando OCR a imagen…' });
+    }
+
+    const text = await runBestOcrVariant(canvas, 1, onProgress);
+    return {
+        text,
+        pageTexts: [text],
+        canvas,
+    };
+}
+
 export async function analyzeReceiptFile(file, options = {}){
     const {selectedTariff = null, onProgress} = options;
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(file.name || '');
 
     let text = '';
     let canvas = null;
@@ -733,9 +903,18 @@ export async function analyzeReceiptFile(file, options = {}){
             text = result.text || '';
             pageTexts = Array.isArray(result.pageTexts) ? result.pageTexts : [];
             canvas = result.canvas || null;
+        } else if (isImage) {
+            const result = await imageFileToTextAndPreview(file, {onProgress});
+            text = result.text || '';
+            pageTexts = Array.isArray(result.pageTexts) ? result.pageTexts : [];
+            canvas = result.canvas || null;
+        } else {
+            throw new Error('Formato de archivo no compatible. Usa PDF, PNG o JPG.');
         }
     } catch (err) {
-        console.error('Error leyendo PDF:', err);
+        console.error('Error leyendo recibo:', err);
+        if (onProgress)
+            onProgress({message: 'No se pudo leer el archivo. Se habilitará captura manual.'});
     }
 
     let parsed = null;
@@ -750,31 +929,10 @@ export async function analyzeReceiptFile(file, options = {}){
                 text
                 );
     } else {
+        const label = isPdf ? 'PDF' : 'imagen';
         if (onProgress)
-            onProgress({message: 'No se pudo leer el PDF. Se habilitará captura manual.'});
-        parsed = {
-            fuente: 'CFE',
-            tarifa: '',
-            servicio: '',
-            totalAPagar: 0,
-            periodo: {raw: '', start: null, end: null, days: 0},
-            tipoPeriodo: selectedTariff?.periodo || '',
-            nombre: '',
-            direccion: '',
-            consumoPeriodo: 0,
-            historial: [],
-            suministro: 0,
-            iva: 16,
-            dap: 0,
-            costoBase: 0,
-            ahorroEstimado: 0,
-            hilos: '',
-            estado: '',
-            rawText: text || '',
-            instalacion: {},
-            insumos: [],
-            impuestosPct: 0.16
-        };
+            onProgress({message: `No se pudo leer el ${label}. Se habilitará captura manual.`});
+        parsed = createEmptyReceiptData(selectedTariff, text || '');
     }
 
     if (selectedTariff?.periodo) {

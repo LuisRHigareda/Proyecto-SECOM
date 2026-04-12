@@ -1,3 +1,4 @@
+import { loadUserPreferences } from './preferences.js';
 import { clamp, formatCurrencyMXN, formatNumber } from './utils.js';
 
 export function computeQuote(receipt, client, params, overrides) {
@@ -50,7 +51,8 @@ export function computeQuote(receipt, client, params, overrides) {
 
     const consumoMensualBase = isBimestral ? (consumoPeriodo / 2) : consumoPeriodo;
     const ajusteKwhMes = Number(receipt?.ajusteConsumo?.kwhMes || 0);
-    const consumoMensual = Math.max(0, consumoMensualBase + ajusteKwhMes);
+    const consumoMensualManual = Number(o?.consumoMensual || 0);
+    const consumoMensual = consumoMensualManual > 0 ? Math.max(0, consumoMensualManual) : Math.max(0, consumoMensualBase + ajusteKwhMes);
 
     // Consideraciones físicas (simulación): sombras reducen producción efectiva, techo puede afectar costo
     const perdidasSombraPct = clamp(Number(receipt?.instalacion?.perdidasSombraPct || 0), 0, 0.6);
@@ -112,6 +114,7 @@ export function computeQuote(receipt, client, params, overrides) {
         params: p,
         consumoMensual: Math.round(consumoMensual),
         consumoMensualBase: Math.round(consumoMensualBase),
+        consumoMensualManual: consumoMensualManual > 0 ? Math.round(consumoMensualManual) : 0,
         ajusteKwhMes: Math.round(ajusteKwhMes),
         kwp: kwpFinal,
         panelesAuto,
@@ -164,6 +167,14 @@ export function buildExportHtml(quote) {
     const impuestosIns = Number(quote.impuestosInsumos || 0);
     const totalIns = Number(quote.totalInsumos || 0);
     const ivaPct = Math.round((Number(quote.impuestosPct || r?.impuestosPct || 0.16) * 100) * 10) / 10;
+    const prefs = loadUserPreferences();
+    const packageLabel = instal?.paqueteSeleccionado
+            ? `Paquete ${String(instal.paqueteSeleccionado).charAt(0).toUpperCase()}${String(instal.paqueteSeleccionado).slice(1)}`
+            : 'Configuración personalizada';
+    const advisor = prefs?.company?.advisorName || 'Asesor SECOM';
+    const companyName = prefs?.company?.companyName || 'SECOM Energía Solar';
+    const companyEmail = prefs?.company?.companyEmail || c.email || '—';
+    const companyPhone = prefs?.company?.companyPhone || c.telefono || '—';
 
     return `
     <div class="export-doc export-doc--formal" id="exportDoc">
@@ -268,6 +279,7 @@ export function buildExportHtml(quote) {
             <div class="export-doc__row2"><span>Modelo de panel</span><b>${(instal.panelModelo || '—')}</b></div>
             <div class="export-doc__row2"><span>Dimensiones del panel</span><b>${(instal.panelDimensiones || '—')}</b></div>
             <div class="export-doc__row2"><span>Modelo de inversor</span><b>${(instal.inversorModelo || '—')}</b></div>
+            <div class="export-doc__row2"><span>Alcance comercial</span><b>${packageLabel}</b></div>
           </div>
           <div class="export-doc__box2">
             <div class="export-doc__label2">Condiciones de instalación</div>
@@ -284,6 +296,19 @@ export function buildExportHtml(quote) {
             <div><span>Costo por kWp</span><b>${formatCurrencyMXN(quote.costPerKwpEff || quote.params?.costPerKwp || 0)}</b></div>
             <div><span>Contingencia</span><b>${Math.round((quote.params?.contingencyPct || 0) * 100)}%</b></div>
           </div>
+        </div>
+      </div>
+
+      <div class="export-doc__section">
+        <div class="export-doc__sectionTitle">Alcance de la propuesta</div>
+        <div class="export-doc__sectionHelp">Resumen ejecutivo del suministro propuesto para facilitar revisión comercial y técnica.</div>
+        <div class="export-doc__assumpGrid">
+          <div><span>Dirección del suministro</span><b>${esc(r.direccion || c.direccion || '—')}</b></div>
+          <div><span>Cliente / titular</span><b>${esc(c.nombre || r.nombre || '—')} / ${esc(r.nombre || '—')}</b></div>
+          <div><span>Asesor responsable</span><b>${esc(advisor)}</b></div>
+          <div><span>Paneles considerados</span><b>${formatNumber(quote.paneles || 0)} unidades</b></div>
+          <div><span>Producción mensual esperada</span><b>${formatNumber(quote.produccionMensual || 0)} kWh/mes</b></div>
+          <div><span>Pago CFE posterior estimado</span><b>${formatCurrencyMXN(pagoConSolar)}</b></div>
         </div>
       </div>
 
@@ -335,8 +360,8 @@ export function buildExportHtml(quote) {
       ` : ''}
 
       <div class="export-doc__foot2">
-        <div><b>Vigencia:</b> 15 días naturales. <b>Observación:</b> La propuesta final está sujeta a verificación técnica en sitio y disponibilidad de equipo.</div>
-        <div class="export-doc__footMeta">SECOM Energía Solar · Contacto: ${(c.telefono || '—')} · ${(c.email || '—')}</div>
+        <div><b>Vigencia:</b> 15 días naturales. <b>Observación:</b> La propuesta final está sujeta a verificación técnica en sitio, validación de ingeniería y disponibilidad de equipo.</div>
+        <div class="export-doc__footMeta">${companyName} · Asesor: ${advisor} · Contacto: ${companyPhone} · ${companyEmail}</div>
       </div>
 
     </div>

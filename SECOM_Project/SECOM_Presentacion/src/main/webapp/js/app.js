@@ -1,7 +1,9 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
-import { analyzeReceiptFile } from './receiptParser.js';
+import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
 import { getQuotes, getProjects, resetAllData, saveProjectFromQuote, saveProject, saveQuote, updateProject, updateQuote, removeProject } from './storage.js';
+import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel } from './catalogData.js';
+import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
 const state = {
   route: 'cotizador',
@@ -29,38 +31,21 @@ const state = {
   // Permite sobrescribir resultados calculados (p. ej. paneles manuales)
   overrides: {
     paneles: null,
+    consumoMensual: null,
   },
-  params: {
-    yieldKwhPerKwpMonth: 135,
-    panelWatts: 550,
-    costPerKwp: 22000,
-    contingencyPct: 0.06,
-  },
+  params: getDefaultQuoteParams(),
   quote: null,
   savedQuote: null,
   chart: null,
   exportChart: null,
+  selectedPackage: '',
+  preferences: loadUserPreferences(),
   cashvolt: {
     file: null,
     data: null,
     status: 'Listo',
   }
 };
-
-// Catálogo base de insumos (para agregar rápidamente en el Paso 2: Datos)
-// Nota: los precios son editables en el CRUD.
-const INSUMO_CATALOG = [
-  { codigo:'P1', descripcion:'Módulo FV 550–615W', unidad:'UD', precio: 0 },
-  { codigo:'I1', descripcion:'Inversor', unidad:'UD', precio: 0 },
-  { codigo:'E1', descripcion:'Estructura de montaje', unidad:'UD', precio: 0 },
-  { codigo:'M1', descripcion:'Conectores MC4 (par)', unidad:'UD', precio: 0 },
-  { codigo:'M2', descripcion:'Cable fotovoltaico', unidad:'M', precio: 0 },
-  { codigo:'PZ', descripcion:'Caja de protecciones FV', unidad:'UD', precio: 0 },
-  { codigo:'MO', descripcion:'Mano de obra especializada', unidad:'SERV', precio: 0 },
-  { codigo:'TR', descripcion:'Trámite CFE', unidad:'SERV', precio: 0 },
-  { codigo:'FL', descripcion:'Fletes y seguros', unidad:'SERV', precio: 0 },
-  { codigo:'ING', descripcion:'Ingeniería', unidad:'SERV', precio: 0 },
-];
 
 const TARIFFS = [
   { key:'dom_m', label:'Doméstica Mensual', periodo:'Mensual', familia:'Doméstica' },
@@ -75,9 +60,9 @@ const TARIFFS = [
 init();
 
 function init(){
-  // Theme
-  const theme = localStorage.getItem('secom_theme') || 'dark';
-  document.documentElement.dataset.theme = theme;
+  // Theme y preferencias
+  state.preferences = loadUserPreferences();
+  applyTheme(state.preferences.theme || 'dark');
 
   // Icons
   if (window.lucide) window.lucide.createIcons();
@@ -99,8 +84,13 @@ function init(){
   $$('.nav__item[data-route]').forEach(btn => {
     btn.addEventListener('click', () => {
       const r = btn.dataset.route;
-      if (r === 'cotizador') startNewQuoteFlow();
-      else setRoute(r);
+      if (r === 'cotizador') {
+        startNewQuoteFlow();
+      } else if (r === 'cashvolt') {
+        window.open('https://cashvolt.mx/public/login', '_blank');
+      } else {
+        setRoute(r);
+      }
       sidebar.classList.remove('is-open');
     });
   });
@@ -138,7 +128,10 @@ function setRoute(route){
 
 function startNewQuoteFlow(){
   state.selectedTariff = null;
-  state.overrides = { paneles: null };
+  state.overrides = { paneles: null, consumoMensual: null };
+  state.selectedPackage = '';
+  state.preferences = loadUserPreferences();
+  state.params = structuredCloneSafe(getDefaultQuoteParams());
   state.quoteMeta = {
     panelModelo: 'Panel fotovoltaico',
     panelDimensiones: '',
@@ -262,55 +255,16 @@ function renderCashvoltRoute(){
   if (!root) return;
 
   root.innerHTML = `
-    <div class="grid cols-2" style="gap:14px">
-      <div class="card">
-        <div class="card__title">Subir Datos a CashVolt</div>
-        <div class="help">Selecciona el archivo .xlsm final o usa una cotización guardada para preparar los datos.</div>
-
-        <input id="cvFile" type="file" accept=".xlsm,application/vnd.ms-excel" hidden />
-
-        <div class="dropzone" id="cvDrop" tabindex="0" role="button" aria-label="Cargar archivo .xlsm">
-          <div class="dropzone__icon"><i data-lucide="upload"></i></div>
-          <div style="min-width:0">
-            <div class="dropzone__title">Arrastre y suelte aquí, o seleccione un archivo</div>
-            <div class="dropzone__sub" id="cvFileHint">.xlsm</div>
-          </div>
-        </div>
-
-        <div class="wizard-actions" style="margin-top:14px">
-          <button class="btn btn--primary" id="cvLoad"><i data-lucide="sparkles"></i>Preparar datos</button>
-          <button class="btn" id="cvUseLast"><i data-lucide="history"></i>Usar última cotización</button>
-        </div>
-
-        <div class="help" id="cvMsg" style="margin-top:10px"></div>
-      </div>
-
-      <div class="card">
-        <div class="card__title">Datos listos para CashVolt</div>
-        <div class="help">Revisa y copia la información para completar el formulario.</div>
-
-        <div style="overflow:auto; margin-top:10px">
-          <table class="table" id="cvTable">
-            <thead>
-              <tr>
-                <th>Campo</th>
-                <th>Valor</th>
-                <th style="text-align:right">Acción</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="wizard-actions" style="justify-content:flex-end; margin-top:12px">
-          <button class="btn" id="cvOpen"><i data-lucide="external-link"></i>Abrir CashVolt</button>
-          <button class="btn btn--success" id="cvCopy"><i data-lucide="copy"></i>Copiar todo</button>
-        </div>
+    <div class="card">
+      <div class="card__title">CashVolt</div>
+      <div class="card__subtitle">Acceso directo</div>
+      <div class="help" style="margin-top:10px">Esta sección únicamente abre la plataforma oficial de CashVolt en una pestaña nueva.</div>
+      <div class="wizard-actions" style="margin-top:14px">
+        <button class="btn btn--primary" id="cvOpenOnly"><i data-lucide="external-link"></i>Ir a CashVolt</button>
       </div>
     </div>
   `;
-
-  wireCashvolt();
+  $('#cvOpenOnly')?.addEventListener('click', () => window.open('https://cashvolt.mx/public/login', '_blank'));
 }
 
 function wireCashvolt(){
@@ -402,8 +356,9 @@ function buildCashvoltDataFromQuote(q){
   const panelW = Number(q.quote?.params?.panelWatts || quote.params?.panelWatts || 550);
   const ahorro = Number(q.quote?.ahorroMensual || quote.ahorroMensual || 0);
   const costo = Number(q.quote?.inversion || quote.inversion || 0);
+  const advisor = state.preferences?.company?.advisorName || 'Asesor SECOM';
   return [
-    { label:'Asesor de ventas:', value:'Jorge Alejandro Díaz Gaxiola' },
+    { label:'Asesor de ventas:', value: advisor },
     { label:'Nombre del cliente:', value:(q.client?.nombre || q.receipt?.nombre || '—') },
     { label:'Ahorro mensual del proyecto:', value:String(Math.round(ahorro)) },
     { label:'Cantidad de Paneles:', value:String(paneles || '—') },
@@ -448,8 +403,8 @@ function buildStepper(){
   const el = $('#stepper');
   const steps = [
     { n:1, label:'Recibo' },
-    { n:2, label:'Datos' },
-    { n:3, label:'Cotización' },
+    { n:2, label:'Datos y sistema' },
+    { n:3, label:'Resumen' },
     { n:4, label:'Exportar' },
   ];
 
@@ -514,6 +469,7 @@ function renderStep1Left(){
 
     <div class="wizard-actions">
       <button class="btn btn--primary" id="btnAnalyze"><i data-lucide="scan"></i>Analizar</button>
+      <button class="btn" id="btnManualCapture"><i data-lucide="keyboard"></i>Captura manual</button>
       <button class="btn" id="btnClear"><i data-lucide="trash-2"></i>Limpiar</button>
     </div>
 
@@ -594,6 +550,24 @@ function wireStep1(){
 
   $('#btnClear').addEventListener('click', () => resetWizard(true));
 
+  $('#btnManualCapture').addEventListener('click', () => {
+    state.receiptFile = null;
+    state.receiptCanvas = null;
+    state.receipt = createEmptyReceiptData(state.selectedTariff);
+    state.receipt.instalacion = state.receipt.instalacion || {};
+    state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+    state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+
+    updateStep1FileHint();
+    updateStep1Preview();
+    updateStep1FromReceipt();
+    $('#analyzeMsg').textContent = 'Captura manual habilitada. Completa los datos en el siguiente paso.';
+    $('#btnStep1Next').disabled = false;
+    setPillStatus('Captura manual', 'busy');
+    toast({ title:'Captura manual', message:'Puedes continuar sin subir un archivo.', icon:'keyboard' });
+  });
+
   $('#btnAnalyze').addEventListener('click', async () => {
     if (!state.receiptFile){
       toast({ title:'Falta el archivo', message:'Selecciona un recibo para continuar.', icon:'alert-triangle' });
@@ -632,9 +606,15 @@ function wireStep1(){
       toast({ title:'Recibo listo', message:'Datos detectados y listos para cotizar.', icon:'check-circle' });
     } catch (err){
       console.error(err);
-      setPillStatus('Error', 'error');
-      $('#analyzeMsg').textContent = err?.message || 'No se pudo analizar el recibo.';
-      toast({ title:'No se pudo analizar', message: err?.message || 'Verifica el archivo e inténtalo de nuevo.', icon:'x-circle' });
+      state.receipt = createEmptyReceiptData(state.selectedTariff);
+      state.receipt.instalacion = state.receipt.instalacion || {};
+      state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+      state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+      state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+      $('#btnStep1Next').disabled = false;
+      setPillStatus('Captura manual', 'busy');
+      $('#analyzeMsg').textContent = (err?.message || 'No se pudo analizar el recibo.') + ' Puedes capturarlo manualmente.';
+      toast({ title:'No se pudo analizar', message: 'Se habilitó la captura manual para continuar.', icon:'x-circle' });
     } finally {
       $('#btnAnalyze').disabled = false;
     }
@@ -671,7 +651,11 @@ async function handleFileSelected(file){
 
 function updateStep1FileHint(){
   const f = state.receiptFile;
-  $('#fileHint').textContent = f ? `${f.name} · ${(f.size/1024/1024).toFixed(2)} MB` : 'PDF o imagen';
+  if (f){
+    $('#fileHint').textContent = `${f.name} · ${(f.size/1024/1024).toFixed(2)} MB`;
+    return;
+  }
+  $('#fileHint').textContent = state.receipt ? 'Captura manual activa' : 'PDF o imagen';
 }
 
 function updateStep1Preview(){
@@ -682,6 +666,7 @@ function updateStep1Preview(){
   preview.querySelectorAll('canvas,img').forEach(x => x.remove());
   if (!state.receiptFile){
     empty.style.display = 'block';
+    empty.textContent = state.receipt ? 'Captura manual activa' : 'Sin archivo cargado';
     return;
   }
   empty.style.display = 'none';
@@ -719,21 +704,182 @@ function updateStep1FromReceipt(){
   $('#kpiTipoPeriodo').textContent = r.tipoPeriodo || '—';
 }
 
+
+function currentStep2Quote(){
+  return computeQuote(state.receipt || {}, state.client || {}, state.params || {}, state.overrides || {});
+}
+
+function renderPackageCards(){
+  const q = currentStep2Quote();
+  return PACKAGE_PRESETS.map(pkg => {
+    const selected = state.selectedPackage === pkg.key;
+    const items = buildPackageItems(pkg.key, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual });
+    const total = items.reduce((acc, it) => acc + (Number(it.cantidad || 0) * Number(it.precio || 0)), 0);
+    return `
+      <button type="button" class="package-card ${selected ? 'is-selected' : ''}" data-package="${pkg.key}">
+        <div class="package-card__head">
+          <div>
+            <div class="package-card__title">${escapeHtml(pkg.label)}</div>
+            <div class="package-card__badge">${escapeHtml(pkg.badge)}</div>
+          </div>
+          <div class="package-card__total">${formatCurrencyMXN(total)}</div>
+        </div>
+        <div class="package-card__desc">${escapeHtml(pkg.description)}</div>
+        <div class="package-card__meta">${items.length} insumos base · ${q.paneles || 0} paneles estimados</div>
+      </button>
+    `;
+  }).join('');
+}
+
+function renderPackagePreviewItems(){
+  if (!state.selectedPackage) {
+    return '<div class="help">Selecciona un paquete para cargar automáticamente insumos y precios por defecto.</div>';
+  }
+  const q = currentStep2Quote();
+  const items = buildPackageItems(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual });
+  return `
+    <div class="package-preview-list">
+      ${items.map(it => `
+        <div class="package-preview-item">
+          <span>${escapeHtml(it.descripcion)}</span>
+          <b>${Number(it.cantidad || 0)} ${escapeHtml(it.unidad || 'UD')} · ${formatCurrencyMXN(it.precio || 0)}</b>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function syncStep2State(){
+  if (!state.receipt) state.receipt = createEmptyReceiptData(state.selectedTariff);
+  const toNum = (v, fallback = 0) => {
+    const n = Number(String(v ?? '').replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  state.receipt.servicio = ($('#rServicio')?.value || '').replace(/\D/g, '').slice(0, 15);
+  const selectedTariffKey = ($('#rSelectedTariff')?.value || '').trim();
+  const selectedTariff = TARIFFS.find(t => t.key === selectedTariffKey) || null;
+  state.selectedTariff = selectedTariff || state.selectedTariff || null;
+  state.receipt.tarifa = ($('#rTarifa')?.value || '').trim().toUpperCase();
+  state.receipt.nombre = ($('#rNombre')?.value || '').trim();
+  state.receipt.direccion = ($('#rDireccion')?.value || '').trim();
+  state.receipt.periodo = state.receipt.periodo || { raw: '', start: null, end: null, days: 0 };
+  state.receipt.periodo.raw = ($('#rPeriodo')?.value || '').trim();
+  state.receipt.tipoPeriodo = ($('#rTipoPeriodo')?.value || '').trim();
+  state.receipt.periodo.days = state.receipt.tipoPeriodo === 'Bimestral' ? 60 : 30;
+  state.receipt.consumoPeriodo = toNum($('#rConsumo')?.value, 0);
+  state.receipt.totalAPagar = toNum($('#rTotal')?.value, 0);
+  state.receipt.hilos = ($('#rHilos')?.value || '').trim();
+  state.receipt.estado = ($('#rEstado')?.value || '').trim().toUpperCase();
+  state.receipt.ajusteConsumo = {
+    kwhMes: toNum($('#rAjusteKwh')?.value, 0),
+    nota: ($('#rAjusteNota')?.value || '').trim(),
+  };
+
+  state.client.nombre = ($('#cNombre')?.value || '').trim();
+  state.client.telefono = ($('#cTel')?.value || '').trim();
+  state.client.email = ($('#cEmail')?.value || '').trim();
+  state.client.direccion = ($('#cDir')?.value || '').trim();
+
+  state.params.yieldKwhPerKwpMonth = toNum($('#pYield')?.value, state.params.yieldKwhPerKwpMonth || 135);
+  state.params.panelWatts = toNum($('#pPanel')?.value, state.params.panelWatts || 550);
+  state.params.costPerKwp = toNum($('#pCost')?.value, state.params.costPerKwp || 22000);
+  state.params.contingencyPct = Math.max(0, Math.min(0.30, toNum($('#pCont')?.value, state.params.contingencyPct || 0.06)));
+
+  const consumoMensualManual = toNum($('#oConsumoMensual')?.value, 0);
+  state.overrides.consumoMensual = consumoMensualManual > 0 ? consumoMensualManual : null;
+
+  const pManual = toNum($('#oPaneles')?.value, 0);
+  state.overrides.paneles = pManual > 0 ? Math.round(pManual) : null;
+
+  state.quoteMeta.panelModelo = ($('#mPanelModelo')?.value || '').trim();
+  state.quoteMeta.panelDimensiones = ($('#mPanelDim')?.value || '').trim();
+  state.quoteMeta.inversorModelo = ($('#mInversor')?.value || '').trim();
+  state.quoteMeta.tipoTecho = ($('#mTecho')?.value || 'No especificado');
+  state.quoteMeta.perdidasSombraPct = Number($('#mSombras')?.value || 0);
+  state.quoteMeta.sombras = $('#mSombras')?.selectedOptions?.[0]?.textContent?.split('(')?.[0]?.trim() || 'No especificado';
+  state.quoteMeta.notasFisicas = ($('#mNotasFisicas')?.value || '').trim();
+
+  state.receipt.instalacion = {
+    ...(state.receipt.instalacion || {}),
+    tipoTecho: state.quoteMeta.tipoTecho,
+    perdidasSombraPct: state.quoteMeta.perdidasSombraPct,
+    sombras: state.quoteMeta.sombras,
+    notasFisicas: state.quoteMeta.notasFisicas,
+    panelModelo: state.quoteMeta.panelModelo,
+    panelDimensiones: state.quoteMeta.panelDimensiones,
+    inversorModelo: state.quoteMeta.inversorModelo,
+    paqueteSeleccionado: state.selectedPackage || '',
+  };
+
+  state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+  state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+  state.quote = currentStep2Quote();
+  return state.quote;
+}
+
+function getStep2Alerts(){
+  const alerts = [];
+  if (!state.receipt?.servicio) alerts.push('Captura o corrige el número de servicio.');
+  if (!state.receipt?.nombre) alerts.push('Revisa el nombre del titular del recibo.');
+  if (!state.receipt?.direccion) alerts.push('Revisa la dirección del suministro.');
+  if (!state.client?.nombre) alerts.push('Captura el nombre del cliente.');
+  return alerts;
+}
+
+function refreshStep2Summary(){
+  const q = syncStep2State();
+  const alerts = getStep2Alerts();
+  $('#step2Holder') && ($('#step2Holder').textContent = state.receipt?.nombre || '—');
+  $('#step2Address') && ($('#step2Address').textContent = state.receipt?.direccion || '—');
+  $('#step2Servicio') && ($('#step2Servicio').textContent = state.receipt?.servicio || '—');
+  $('#step2Periodo') && ($('#step2Periodo').textContent = state.receipt?.periodo?.raw || '—');
+  $('#step2Total') && ($('#step2Total').textContent = state.receipt?.totalAPagar ? formatCurrencyMXN(state.receipt.totalAPagar) : '—');
+  $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
+  $('#step2Panels') && ($('#step2Panels').textContent = `${formatNumber(q.paneles || 0)} paneles`);
+  $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
+  $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
+  const consumoTexto = state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`;
+  const packageText = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual }) : 'Sin paquete seleccionado';
+  $('#step2Package') && ($('#step2Package').textContent = packageText);
+  $('#packageLabel') && ($('#packageLabel').textContent = packageText);
+  $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
+  $('#step2Alerts') && ($('#step2Alerts').innerHTML = alerts.length
+    ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('')
+    : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>');
+  const preview = $('#packagePreview');
+  if (preview) preview.innerHTML = renderPackagePreviewItems();
+}
+
+function applyPackagePreset(packageKey){
+  syncStep2State();
+  state.selectedPackage = packageKey;
+  const q = state.quote || currentStep2Quote();
+  state.receipt.insumos = buildPackageItems(packageKey, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual });
+  state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+  state.quote = currentStep2Quote();
+  renderWizard();
+  toast({ title:'Paquete aplicado', message:`${PACKAGE_PRESETS.find(p => p.key === packageKey)?.label || 'Paquete'} cargado con precios por defecto.`, icon:'package' });
+}
+
 // ------------------------------
 // Step 2
 // ------------------------------
 
 function renderStep2Left(){
-  const r = state.receipt;
+  const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
   const ajusteKwh = Number(r?.ajusteConsumo?.kwhMes || 0);
   const ajusteNota = (r?.ajusteConsumo?.nota || '').trim();
   const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
-  const impuestosPct = Number.isFinite(Number(r?.impuestosPct)) ? Number(r.impuestosPct) : 0.16;
+  const impuestosPct = Number.isFinite(Number(r?.impuestosPct)) ? Number(r.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+  const q = currentStep2Quote();
+  const panelesShown = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? Number(state.overrides.paneles) : q.paneles;
+  const panelesManualValue = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? String(state.overrides.paneles) : ''; 
   return `
-    <div class="card__title">Revisión y ajustes</div>
-    <div class="help">Verifica los datos extraídos del recibo. Puedes corregirlos antes de generar la cotización.</div>
+    <div class="card__title">Datos del recibo y configuración del sistema</div>
+    <div class="help">Aquí puedes corregir nombre, dirección y número de servicio detectados, además de definir el sistema y el paquete de insumos antes de generar la cotización.</div>
 
-    <div class="card__subtitle" style="margin-top:12px">Datos del recibo</div>
+    <div class="card__subtitle" style="margin-top:12px">Campos críticos del recibo</div>
 
     <div class="row" style="margin-top:10px">
       <div class="field">
@@ -742,19 +888,24 @@ function renderStep2Left(){
       </div>
       <div class="field">
         <label>Tarifa</label>
-        <input id="rTarifa" placeholder="1B / DAC / ..." value="${escapeAttr(r?.tarifa || '')}" />
+        <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || '')}" />
       </div>
     </div>
 
     <div class="row" style="margin-top:10px">
-      <div class="field" style="flex:1.4">
-        <label>Titular del recibo (detectado)</label>
-        <input value="${escapeAttr(r?.nombre || '')}" disabled />
+      <div class="field">
+        <label>Titular del recibo</label>
+        <input id="rNombre" placeholder="Nombre detectado del recibo" value="${escapeAttr(r?.nombre || '')}" />
       </div>
-      <div class="field" style="flex:1">
+      <div class="field">
         <label>Estado (abreviatura)</label>
         <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
       </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Dirección del suministro</label>
+      <textarea id="rDireccion" rows="3" placeholder="Dirección detectada del recibo">${escapeHtml(r?.direccion || '')}</textarea>
     </div>
 
     <div class="row" style="margin-top:10px">
@@ -795,15 +946,15 @@ function renderStep2Left(){
 
     <div class="field" style="margin-top:10px">
       <label>Nota del ajuste de consumo</label>
-      <textarea id="rAjusteNota" rows="2" placeholder="Ejemplo: Se considera la carga de un vehículo eléctrico.">${escapeHtml(ajusteNota)}</textarea>
+      <textarea id="rAjusteNota" rows="2" placeholder="Ejemplo: Se considera una ampliación de carga futura.">${escapeHtml(ajusteNota)}</textarea>
     </div>
 
     <div class="card__subtitle" style="margin-top:14px">Datos del cliente</div>
 
     <div class="row" style="margin-top:10px">
       <div class="field">
-        <label>Nombre del cliente (puede ser diferente al titular del recibo)</label>
-        <input id="cNombre" placeholder="Nombre del cliente" value="${escapeAttr(state.client.nombre)}" />
+        <label>Nombre del cliente</label>
+        <input id="cNombre" placeholder="Nombre del cliente" value="${escapeAttr(state.client.nombre || r?.nombre || '')}" />
       </div>
       <div class="field">
         <label>Teléfono</label>
@@ -818,24 +969,111 @@ function renderStep2Left(){
       </div>
       <div class="field">
         <label>Tipo seleccionado</label>
-        <input value="${escapeAttr(state.selectedTariff?.label || '')}" disabled />
+        <select id="rSelectedTariff">
+          <option value="">Selecciona un tipo…</option>
+          ${TARIFFS.map(t => `<option value="${escapeAttr(t.key)}" ${state.selectedTariff?.key === t.key ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
+        </select>
       </div>
     </div>
 
     <div class="field" style="margin-top:10px">
-      <label>Dirección</label>
-      <textarea id="cDir" rows="3" placeholder="Dirección del servicio">${escapeHtml(state.client.direccion)}</textarea>
+      <label>Dirección de instalación / contacto</label>
+      <textarea id="cDir" rows="3" placeholder="Dirección donde se instalará el sistema">${escapeHtml(state.client.direccion || r?.direccion || '')}</textarea>
     </div>
 
-    <div class="card__subtitle" style="margin-top:14px">Insumos de la cotización</div>
-    <div class="help">Agrega, edita o elimina insumos. El total se calcula automáticamente y se refleja en la cotización.</div>
+    <div class="card__subtitle" style="margin-top:14px">Edición del sistema</div>
+
+    <div class="grid cols-3" style="margin-top:10px">
+      <div class="field">
+        <label>Producción promedio (kWh/kWp-mes)</label>
+        <input id="pYield" type="number" min="60" max="220" step="1" value="${escapeAttr(String(state.params.yieldKwhPerKwpMonth))}" />
+      </div>
+      <div class="field">
+        <label>Panel (W)</label>
+        <input id="pPanel" type="number" min="350" max="700" step="10" value="${escapeAttr(String(state.params.panelWatts))}" />
+      </div>
+      <div class="field">
+        <label>Costo por kWp (MXN)</label>
+        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${escapeAttr(String(state.params.costPerKwp))}" />
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:10px">
+      <div class="field">
+        <label>Contingencia</label>
+        <input id="pCont" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(state.params.contingencyPct))}" />
+      </div>
+      <div class="field">
+        <label>Paneles (manual, opcional)</label>
+        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(panelesManualValue)}" placeholder="Auto: ${escapeAttr(String(panelesShown))}" />
+      </div>
+      <div class="field">
+        <label>Modelo de panel</label>
+        <input id="mPanelModelo" placeholder="Ej. JA Solar 550 W" value="${escapeAttr(state.quoteMeta.panelModelo || '')}" />
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:10px">
+      <div class="field">
+        <label>Dimensiones del panel</label>
+        <input id="mPanelDim" placeholder="Ej. 2.27 × 1.13 m" value="${escapeAttr(state.quoteMeta.panelDimensiones || '')}" />
+      </div>
+      <div class="field">
+        <label>Tipo de techo</label>
+        <select id="mTecho">
+          ${['No especificado','Losa','Lámina','Teja','Otro'].map(x => `<option ${x===state.quoteMeta.tipoTecho?'selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Sombras</label>
+        <select id="mSombras">
+          <option value="0" ${Number(state.quoteMeta.perdidasSombraPct||0)===0?'selected':''}>Ninguna (0%)</option>
+          <option value="0.10" ${Number(state.quoteMeta.perdidasSombraPct||0)===0.10?'selected':''}>Baja (10%)</option>
+          <option value="0.20" ${Number(state.quoteMeta.perdidasSombraPct||0)===0.20?'selected':''}>Media (20%)</option>
+          <option value="0.35" ${Number(state.quoteMeta.perdidasSombraPct||0)===0.35?'selected':''}>Alta (35%)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field" style="flex:1.2">
+        <label>Modelo de inversor</label>
+        <input id="mInversor" placeholder="Ej. Huawei SUN2000" value="${escapeAttr(state.quoteMeta.inversorModelo || '')}" />
+      </div>
+      <div class="field" style="flex:1">
+        <label>Consumo mensual manual (opcional)</label>
+        <input id="oConsumoMensual" type="number" min="0" step="1" value="${escapeAttr(String(state.overrides?.consumoMensual || ''))}" placeholder="Auto: ${escapeAttr(String(q.consumoMensual || 0))} kWh/mes" />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Consideraciones físicas / notas</label>
+      <textarea id="mNotasFisicas" rows="3" placeholder="Área disponible, orientación, sombras y observaciones del techo.">${escapeHtml(state.quoteMeta.notasFisicas || '')}</textarea>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Paquetes de insumos</div>
+    <div class="help">Al seleccionar un paquete se cargarán insumos sugeridos y precios por defecto. Después puedes editar cualquier partida.</div>
+
+    <div class="package-grid" style="margin-top:10px">
+      ${renderPackageCards()}
+    </div>
+
+    <div class="row" style="justify-content:space-between; margin-top:10px; align-items:flex-start">
+      <div class="help" id="packageLabel">${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual }) : 'Sin paquete seleccionado.'}</div>
+      <button class="btn" id="btnClearPackage"><i data-lucide="eraser"></i>Quitar paquete</button>
+    </div>
+
+    <div class="package-preview" id="packagePreview" style="margin-top:10px">${renderPackagePreviewItems()}</div>
+
+    <div class="card__subtitle" style="margin-top:14px">Insumos editables</div>
+    <div class="help">Puedes agregar más partidas, cambiar cantidades, precios o quitar insumos del paquete.</div>
 
     <div class="row" style="margin-top:10px; align-items:flex-end">
       <div class="field" style="flex:2">
         <label>Agregar desde catálogo</label>
         <select id="insCatalog">
           <option value="">Selecciona un insumo…</option>
-          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)}</option>`).join('')}
+          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap">
@@ -849,7 +1087,7 @@ function renderStep2Left(){
         <thead>
           <tr>
             <th style="min-width:140px">CÓDIGO</th>
-            <th style="min-width:260px">DESCRIPCIÓN</th>
+            <th style="min-width:280px">DESCRIPCIÓN</th>
             <th style="min-width:120px">CANTIDAD</th>
             <th style="min-width:120px">UNIDAD</th>
             <th style="min-width:140px">PRECIO</th>
@@ -886,12 +1124,13 @@ function renderStep2Left(){
 }
 
 function renderStep2Right(){
-  const r = state.receipt;
-  const hist = (r?.historial || []).slice(-8);
+  const r = state.receipt || {};
   const val = validateReceiptAgainstSelection(r, state.selectedTariff);
-  const q = computeQuote(r, state.client, state.params, state.overrides);
+  const q = currentStep2Quote();
+  const alerts = getStep2Alerts();
   return `
-    <div class="card__title">Resumen detectado</div>
+    <div class="card__title">Resumen de revisión</div>
+    <div class="help">Verifica que los campos clave se hayan leído correctamente antes de continuar.</div>
 
     <div class="row" style="margin-top:10px">
       <div class="kpi" style="flex:1">
@@ -906,36 +1145,42 @@ function renderStep2Right(){
 
     <div class="help" style="margin-top:8px">${escapeHtml(val.message)}</div>
 
-    <div class="kpi">
-      <div class="kpi__label">No. de servicio</div>
-      <div class="kpi__value">${escapeHtml(r?.servicio || '—')}</div>
+    <div class="review-panel" style="margin-top:12px">
+      <div class="review-row"><span>Titular del recibo</span><b id="step2Holder">${escapeHtml(r?.nombre || '—')}</b></div>
+      <div class="review-row"><span>No. de servicio</span><b id="step2Servicio">${escapeHtml(r?.servicio || '—')}</b></div>
+      <div class="review-row"><span>Dirección del suministro</span><b id="step2Address">${escapeHtml(r?.direccion || '—')}</b></div>
+      <div class="review-row"><span>Periodo</span><b id="step2Periodo">${escapeHtml(r?.periodo?.raw || '—')}</b></div>
+      <div class="review-row"><span>Total a pagar</span><b id="step2Total">${r?.totalAPagar ? formatCurrencyMXN(r.totalAPagar) : '—'}</b></div>
+      <div class="review-row"><span>Paquete de insumos</span><b id="step2Package">${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual }) : 'Sin paquete seleccionado'}</b></div>
     </div>
 
-    <div class="row" style="margin-top:10px">
-      <div class="kpi" style="flex:1">
-        <div class="kpi__label">Periodo</div>
-        <div class="kpi__value" style="font-size:13px">${escapeHtml(r?.periodo?.raw || '—')}</div>
+    <div class="card__subtitle" style="margin-top:14px">Pre-cotización</div>
+    <div class="grid cols-2" style="margin-top:10px">
+      <div class="kpi">
+        <div class="kpi__label">Potencia estimada</div>
+        <div class="kpi__value" id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</div>
       </div>
-      <div class="kpi" style="flex:1">
-        <div class="kpi__label">Total a pagar</div>
-        <div class="kpi__value" style="font-size:14px">${r?.totalAPagar ? formatCurrencyMXN(r.totalAPagar) : '—'}</div>
+      <div class="kpi">
+        <div class="kpi__label">Paneles</div>
+        <div class="kpi__value" id="step2Panels">${formatNumber(q.paneles || 0)} paneles</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Ahorro mensual</div>
+        <div class="kpi__value" id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Consumo mensual usado</div>
+        <div class="kpi__value" id="step2ConsumoMensual">${state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__label">Total de cotización</div>
+        <div class="kpi__value" id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</div>
       </div>
     </div>
 
-    <div class="kpi" style="margin-top:10px">
-      <div class="kpi__label">Consumo del periodo</div>
-      <div class="kpi__value">${r?.consumoPeriodo ? `${formatNumber(r.consumoPeriodo)} kWh` : '—'}</div>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Consumo histórico (kWh)</div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap">
-      ${hist.length ? hist.map(h => `<span class="badge">${formatNumber(h.kwh)} kWh</span>`).join('') : '<span class="badge">Sin datos</span>'}
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Resumen de cotización</div>
-    <div class="kpi" style="margin-top:8px">
-      <div class="kpi__label">Total de cotización</div>
-      <div class="kpi__value" id="kpiQuoteTotal" style="font-size:14px">${formatCurrencyMXN(q.inversion || 0)}</div>
+    <div class="card__subtitle" style="margin-top:14px">Campos por revisar</div>
+    <div id="step2Alerts" style="margin-top:8px">
+      ${alerts.length ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('') : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>'}
     </div>
   `;
 }
@@ -1031,6 +1276,7 @@ function setupInsumosCrud(){
     const q = computeQuote(r, state.client, state.params, state.overrides);
     const kpi = $('#kpiQuoteTotal');
     if (kpi) kpi.textContent = formatCurrencyMXN(q.inversion || 0);
+    if ($('#step2Package')) refreshStep2Summary();
   };
 
   // Inicial
@@ -1127,53 +1373,54 @@ function wireStep2(){
 
   $('#btnBack2').addEventListener('click', () => gotoStep(1));
 
-  // CRUD de insumos (en vivo)
-  setupInsumosCrud();
+  const syncAndRefresh = debounce(() => {
+    syncStep2State();
+    refreshStep2Summary();
+  }, 120);
+
+  [
+    '#rServicio','#rTarifa','#rNombre','#rDireccion','#rPeriodo','#rTipoPeriodo','#rConsumo','#rTotal','#rHilos','#rEstado',
+    '#rAjusteKwh','#rAjusteNota','#cNombre','#cTel','#cEmail','#cDir','#rSelectedTariff',
+    '#pYield','#pPanel','#pCost','#pCont','#oConsumoMensual','#oPaneles','#mPanelModelo','#mPanelDim','#mTecho','#mSombras','#mInversor','#mNotasFisicas'
+  ].forEach(id => {
+    $(id)?.addEventListener('input', syncAndRefresh);
+    $(id)?.addEventListener('change', syncAndRefresh);
+  });
+
+  $$('#route-cotizador [data-package]').forEach(btn => {
+    btn.addEventListener('click', () => applyPackagePreset(btn.dataset.package));
+  });
+
+  $('#btnClearPackage')?.addEventListener('click', () => {
+    state.selectedPackage = '';
+    if (state.receipt?.instalacion) state.receipt.instalacion.paqueteSeleccionado = '';
+    renderWizard();
+    toast({ title:'Paquete retirado', message:'Puedes mantener insumos manuales o cargar otro paquete.', icon:'eraser' });
+  });
 
   $('#btnNext2').addEventListener('click', () => {
-    // Actualizar recibo (editable)
-    const toNum = (v) => {
-      const s = String(v||'').replace(/,/g,'').trim();
-      const n = Number(s);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    state.receipt.servicio = $('#rServicio').value.trim();
-    state.receipt.tarifa = $('#rTarifa').value.trim().toUpperCase();
-    state.receipt.periodo = state.receipt.periodo || { raw:'', start:null, end:null, days:0 };
-    state.receipt.periodo.raw = $('#rPeriodo').value.trim();
-    state.receipt.tipoPeriodo = $('#rTipoPeriodo').value;
-    state.receipt.periodo.days = state.receipt.tipoPeriodo === 'Bimestral' ? 60 : 30;
-    state.receipt.consumoPeriodo = toNum($('#rConsumo').value);
-    state.receipt.totalAPagar = toNum($('#rTotal').value);
-    state.receipt.hilos = ($('#rHilos').value || '').trim();
-    state.receipt.estado = ($('#rEstado').value || '').trim().toUpperCase();
-
-    // Ajuste de consumo (kWh/mes) + nota
-    const ajKwh = toNum($('#rAjusteKwh')?.value);
-    const ajNota = ($('#rAjusteNota')?.value || '').trim();
-    state.receipt.ajusteConsumo = { kwhMes: ajKwh, nota: ajNota };
-
-    state.client.nombre = $('#cNombre').value.trim();
-    state.client.telefono = $('#cTel').value.trim();
-    state.client.email = $('#cEmail').value.trim();
-    state.client.direccion = $('#cDir').value.trim();
-
-    // Asegurar estructuras
-    state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
-    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
-
+    const q = syncStep2State();
     const msg = $('#msg2');
+
     if (!state.client.nombre){
       msg.textContent = 'Por favor, captura el nombre del cliente.';
       toast({ title:'Falta información', message:'El nombre del cliente es obligatorio.', icon:'alert-triangle' });
       return;
     }
 
+    if (!state.receipt.servicio){
+      msg.textContent = 'Por favor, captura el número de servicio del recibo.';
+      toast({ title:'Dato crítico faltante', message:'El número de servicio es obligatorio para continuar.', icon:'alert-triangle' });
+      return;
+    }
+
     msg.textContent = '';
-    state.quote = null; // recalcular con insumos
+    state.quote = q;
     gotoStep(3);
   });
+
+  setupInsumosCrud();
+  refreshStep2Summary();
 }
 
 // ------------------------------
@@ -1181,31 +1428,27 @@ function wireStep2(){
 // ------------------------------
 
 function renderStep3Left(){
-  const q = state.quote || computeQuote(state.receipt, state.client, state.params, state.overrides);
+  const q = state.quote || currentStep2Quote();
   state.quote = q;
-  const meta = state.quoteMeta || {};
-  const panelesShown = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? Number(state.overrides.paneles) : q.paneles;
+  const packageLabel = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual }) : 'Sin paquete';
 
   return `
-    <div class="card__title">Cotización</div>
-    <div class="help">Ajusta parámetros, consideraciones físicas y (si aplica) sobrescribe paneles. Los resultados se recalculan al instante.</div>
+    <div class="card__title">Resumen técnico y económico</div>
+    <div class="help">Esta vista consolida la información corregida del recibo, el sistema propuesto y los montos estimados. Si necesitas cambiar algo, regresa al paso anterior.</div>
 
     <div class="grid cols-3" style="margin-top:12px">
       <div class="kpi">
-        <div class="kpi__label">Potencia estimada</div>
+        <div class="kpi__label">Potencia instalada</div>
         <div class="kpi__value">${q.kwp.toFixed(2)} kWp</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Paneles</div>
-        <div class="kpi__value">${panelesShown}</div>
+        <div class="kpi__value">${q.paneles}</div>
       </div>
       <div class="kpi">
         <div class="kpi__label">Inversión</div>
         <div class="kpi__value">${formatCurrencyMXN(q.inversion)}</div>
       </div>
-    </div>
-
-    <div class="grid cols-3" style="margin-top:10px">
       <div class="kpi">
         <div class="kpi__label">Ahorro mensual</div>
         <div class="kpi__value">${formatCurrencyMXN(q.ahorroMensual)}</div>
@@ -1215,94 +1458,28 @@ function renderStep3Left(){
         <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
       </div>
       <div class="kpi">
-        <div class="kpi__label">Producción</div>
-        <div class="kpi__value">${formatNumber(q.produccionMensual)} kWh/mes</div>
+        <div class="kpi__label">Producción anual</div>
+        <div class="kpi__value">${formatNumber(q.produccionAnual)} kWh</div>
       </div>
     </div>
 
-    <div class="card__subtitle" style="margin-top:14px">Parámetros</div>
-
-    <div class="row">
-      <div class="field">
-        <label>Producción promedio</label>
-        <input id="pYield" type="number" min="60" max="220" step="1" value="${q.params.yieldKwhPerKwpMonth}" />
-      </div>
-      <div class="field">
-        <label>Panel (W)</label>
-        <input id="pPanel" type="number" min="350" max="700" step="10" value="${q.params.panelWatts}" />
-      </div>
-      <div class="field">
-        <label>Costo por kWp (MXN)</label>
-        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${q.params.costPerKwp}" />
-      </div>
+    <div class="review-panel" style="margin-top:14px">
+      <div class="review-row"><span>Titular</span><b>${escapeHtml(state.receipt?.nombre || '—')}</b></div>
+      <div class="review-row"><span>Cliente</span><b>${escapeHtml(state.client?.nombre || '—')}</b></div>
+      <div class="review-row"><span>No. de servicio</span><b>${escapeHtml(state.receipt?.servicio || '—')}</b></div>
+      <div class="review-row"><span>Dirección</span><b>${escapeHtml(state.receipt?.direccion || state.client?.direccion || '—')}</b></div>
+      <div class="review-row"><span>Panel</span><b>${escapeHtml(state.quoteMeta?.panelModelo || 'Panel fotovoltaico')}</b></div>
+      <div class="review-row"><span>Inversor</span><b>${escapeHtml(state.quoteMeta?.inversorModelo || 'Por definir')}</b></div>
+      <div class="review-row"><span>Techo / sombras</span><b>${escapeHtml(state.quoteMeta?.tipoTecho || 'No especificado')} · ${escapeHtml(state.quoteMeta?.sombras || 'Sin dato')}</b></div>
+      <div class="review-row"><span>Paquete</span><b>${escapeHtml(packageLabel)}</b></div>
     </div>
 
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Contingencia</label>
-        <input id="pCont" type="number" min="0" max="0.2" step="0.01" value="${q.params.contingencyPct}" />
-      </div>
-      <div class="field">
-        <label>Consumo mensual usado</label>
-        <input value="${formatNumber(q.consumoMensual)} kWh/mes" disabled />
-      </div>
-      <div class="field">
-        <label>Pago promedio</label>
-        <input value="${formatCurrencyMXN(q.pagoProm)}" disabled />
-      </div>
-    </div>
+    <div class="card__subtitle" style="margin-top:14px">Observaciones del sistema</div>
+    <div class="help">${escapeHtml(state.quoteMeta?.notasFisicas || 'Sin observaciones adicionales.')}</div>
 
-    <div class="card__subtitle" style="margin-top:14px">Edición del sistema</div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Paneles (manual)</label>
-        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(String(panelesShown))}" />
-      </div>
-      <div class="field" style="flex:1.4">
-        <label>Modelo de panel</label>
-        <input id="mPanelModelo" placeholder="Ej. Canadian Solar 615W" value="${escapeAttr(meta.panelModelo || '')}" />
-      </div>
-      <div class="field" style="flex:1">
-        <label>Dimensiones del panel</label>
-        <input id="mPanelDim" placeholder="Ej. 2.2 x 1.1 m" value="${escapeAttr(meta.panelDimensiones || '')}" />
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Tipo de techo</label>
-        <select id="mTecho">
-          ${['No especificado','Losa','Lámina','Teja','Otro'].map(x => `<option ${x===meta.tipoTecho?'selected':''}>${x}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label>Sombras</label>
-        <select id="mSombras">
-          <option value="0" ${Number(meta.perdidasSombraPct||0)===0?'selected':''}>Ninguna (0%)</option>
-          <option value="0.10" ${Number(meta.perdidasSombraPct||0)===0.10?'selected':''}>Baja (10%)</option>
-          <option value="0.20" ${Number(meta.perdidasSombraPct||0)===0.20?'selected':''}>Media (20%)</option>
-          <option value="0.35" ${Number(meta.perdidasSombraPct||0)===0.35?'selected':''}>Alta (35%)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Modelo de inversor</label>
-        <input id="mInversor" placeholder="Ej. Huawei 50kW" value="${escapeAttr(meta.inversorModelo || '')}" />
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:10px">
-      <label>Consideraciones físicas (notas)</label>
-      <textarea id="mNotasFisicas" rows="3" placeholder="Ej. Área disponible, orientación, sombras por estructuras, tipo de techo, etc.">${escapeHtml(meta.notasFisicas || '')}</textarea>
-    </div>
-
-    <div class="wizard-actions" style="justify-content:flex-end">
-      <button class="btn" id="btnAutoPaneles"><i data-lucide="refresh-ccw"></i>Recalcular paneles</button>
-    </div>
-
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBack3"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNext3"><i data-lucide="arrow-right"></i>Generar cotización</button>
+    <div class="wizard-actions" style="justify-content:space-between; margin-top:16px">
+      <button class="btn" id="btnBack3"><i data-lucide="arrow-left"></i>Volver a editar</button>
+      <button class="btn btn--success" id="btnNext3"><i data-lucide="arrow-right"></i>Preparar formato final</button>
     </div>
   `;
 }
@@ -1340,52 +1517,6 @@ function wireStep3(){
 
   $('#btnBack3').addEventListener('click', () => gotoStep(2));
   $('#btnNext3').addEventListener('click', () => gotoStep(4));
-
-  const recompute = () => {
-    state.params.yieldKwhPerKwpMonth = Number($('#pYield').value || 135);
-    state.params.panelWatts = Number($('#pPanel').value || 550);
-    state.params.costPerKwp = Number($('#pCost').value || 22000);
-    state.params.contingencyPct = Number($('#pCont').value || 0.06);
-
-    // Overrides
-    const pManual = Number($('#oPaneles')?.value);
-    state.overrides.paneles = (Number.isFinite(pManual) && pManual > 0) ? Math.round(pManual) : null;
-
-    // Meta y consideraciones físicas (simulación)
-    state.quoteMeta.panelModelo = ($('#mPanelModelo')?.value || '').trim();
-    state.quoteMeta.panelDimensiones = ($('#mPanelDim')?.value || '').trim();
-    state.quoteMeta.inversorModelo = ($('#mInversor')?.value || '').trim();
-    state.quoteMeta.tipoTecho = ($('#mTecho')?.value || 'No especificado');
-    state.quoteMeta.perdidasSombraPct = Number($('#mSombras')?.value || 0);
-    state.quoteMeta.sombras = $('#mSombras')?.selectedOptions?.[0]?.textContent?.split('(')?.[0]?.trim() || 'No especificado';
-    state.quoteMeta.notasFisicas = ($('#mNotasFisicas')?.value || '').trim();
-
-    // Guardar en el recibo para persistencia simple
-    state.receipt.instalacion = {
-      tipoTecho: state.quoteMeta.tipoTecho,
-      perdidasSombraPct: state.quoteMeta.perdidasSombraPct,
-      sombras: state.quoteMeta.sombras,
-      notasFisicas: state.quoteMeta.notasFisicas,
-      panelModelo: state.quoteMeta.panelModelo,
-      panelDimensiones: state.quoteMeta.panelDimensiones,
-      inversorModelo: state.quoteMeta.inversorModelo,
-    };
-
-    state.quote = computeQuote(state.receipt, state.client, state.params, state.overrides);
-    // re-render step 3 only
-    renderWizard();
-  };
-
-  const onInput = debounce(recompute, 150);
-  ['#pYield','#pPanel','#pCost','#pCont','#oPaneles','#mPanelModelo','#mPanelDim','#mTecho','#mSombras','#mInversor','#mNotasFisicas']
-    .forEach(id => $(id)?.addEventListener('input', onInput));
-
-  $('#btnAutoPaneles')?.addEventListener('click', () => {
-    state.overrides.paneles = null;
-    // Recalcula con overrides limpios
-    state.quote = computeQuote(state.receipt, state.client, state.params, state.overrides);
-    renderWizard();
-  });
 
   renderHistoryTable();
   renderChart();
@@ -1504,9 +1635,7 @@ function wireStep4(){
   $('#btnBack4').addEventListener('click', () => gotoStep(3));
   $('#btnExport').addEventListener('click', exportPdf);
   $('#btnGoCashvoltFromQuote')?.addEventListener('click', () => {
-    state.cashvolt.data = buildCashvoltDataFromQuote({ client: state.client, quote: state.quote, receipt: state.receipt });
-    renderCashvoltRoute();
-    setRoute('cashvolt');
+    window.open('https://cashvolt.mx/public/login', '_blank');
   });
 
   $('#btnSaveQuote').addEventListener('click', () => {
@@ -1759,6 +1888,8 @@ function resetWizard(full=false){
     state.receipt = null;
     state.receiptCanvas = null;
     state.client = { nombre:'', telefono:'', email:'', direccion:'' };
+    state.params = structuredCloneSafe(getDefaultQuoteParams());
+    state.selectedPackage = '';
     state.quote = null;
     state.savedQuote = null;
   }
@@ -1952,21 +2083,22 @@ function openModalForQuote(q){
 function openQuoteEditor(q){
   // Cargar una cotización guardada en el flujo del cotizador
   state.selectedTariff = guessTariffFromQuote(q);
-  // Abrir en la pantalla de edición del sistema (más cercano a "editar en pantalla")
-  state.wizardStep = 3;
+  // Abrir directamente en el paso de edición de datos y sistema
+  state.wizardStep = 2;
   state.receiptFile = null; // no se conserva el archivo
   state.receiptCanvas = null;
   state.receipt = structuredCloneSafe(q.receipt || {});
   state.client = structuredCloneSafe(q.client || { nombre:'', telefono:'', email:'', direccion:'' });
   state.params = structuredCloneSafe(q.params || state.params);
   state.quote = structuredCloneSafe(q.quote || null);
-  state.overrides = structuredCloneSafe(q.overrides || { paneles: null });
+  state.overrides = structuredCloneSafe(q.overrides || { paneles: null, consumoMensual: null });
   state.quoteMeta = structuredCloneSafe(q.quoteMeta || q.receipt?.instalacion || state.quoteMeta);
+  state.selectedPackage = q.receipt?.instalacion?.paqueteSeleccionado || '';
   state.savedQuote = q;
 
   renderCotizadorRoute();
   setRoute('cotizador');
-  gotoStep(3);
+  gotoStep(2);
   toast({ title:'Edición', message:`Cotización ${q.id} cargada para editar.`, icon:'pencil' });
 }
 
@@ -2088,35 +2220,47 @@ async function exportPdfFromStoredQuote(q){
 
 function renderProyectosRoute(){
   const root = $('#route-proyectos');
+  const projects = getProjects();
+  const completed = projects.filter(p => String(p.status || '').toLowerCase().includes('complet')).length;
+  const inProgress = projects.filter(p => ['en planeación','en instalación','en trámite'].includes(String(p.status || '').toLowerCase())).length;
+
   root.innerHTML = `
-    <div class="card">
-      <div class="row" style="align-items:center">
-        <div style="flex:1">
-          <div class="card__title">Proyectos</div>
-          <div class="card__subtitle">Gestión de proyectos</div>
-        </div>
-        <button class="btn btn--primary" id="btnNewProject"><i data-lucide="plus"></i>Agregar proyecto</button>
-        <div class="field" style="max-width:320px">
-          <label>Buscar</label>
-          <input id="projSearch" placeholder="Cliente, estatus o No. de servicio" />
-        </div>
+    <div class="grid" style="gap:14px">
+      <div class="grid cols-3">
+        <div class="card"><div class="card__title">${projects.length}</div><div class="card__subtitle">Proyectos registrados</div></div>
+        <div class="card"><div class="card__title">${inProgress}</div><div class="card__subtitle">En proceso</div></div>
+        <div class="card"><div class="card__title">${completed}</div><div class="card__subtitle">Completados</div></div>
       </div>
 
-      <div style="overflow:auto; margin-top:10px">
-        <table class="table" id="proyectosTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Cliente</th>
-              <th>No. de servicio</th>
-              <th>Potencia</th>
-              <th>Inversión</th>
-              <th>Estatus</th>
-              <th style="text-align:right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div style="flex:1">
+            <div class="card__title">Proyectos</div>
+            <div class="card__subtitle">Seguimiento comercial y técnico de cotizaciones confirmadas</div>
+          </div>
+          <button class="btn btn--primary" id="btnNewProject"><i data-lucide="plus"></i>Agregar proyecto</button>
+          <div class="field" style="max-width:320px">
+            <label>Buscar</label>
+            <input id="projSearch" placeholder="Cliente, estatus o No. de servicio" />
+          </div>
+        </div>
+
+        <div style="overflow:auto; margin-top:10px">
+          <table class="table" id="proyectosTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Cliente</th>
+                <th>No. de servicio</th>
+                <th>Potencia</th>
+                <th>Inversión</th>
+                <th>Estatus</th>
+                <th style="text-align:right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
   `;
@@ -2435,7 +2579,9 @@ function openStatusPicker(p){
 
 function renderOpcionesRoute(){
   const root = $('#route-opciones');
-  const theme = document.documentElement.dataset.theme || 'dark';
+  state.preferences = loadUserPreferences();
+  const prefs = state.preferences;
+  const theme = prefs.theme || 'dark';
 
   root.innerHTML = `
     <div class="grid" style="gap:14px">
@@ -2444,9 +2590,7 @@ function renderOpcionesRoute(){
         <div class="card__subtitle">Tema del sistema</div>
 
         <div class="row" style="align-items:center">
-          <div class="help" style="flex:1">
-            Cambia entre modo claro y modo oscuro. La preferencia se guarda en este equipo.
-          </div>
+          <div class="help" style="flex:1">Cambia entre modo claro y oscuro. La preferencia queda guardada para este equipo.</div>
           <div class="field" style="max-width:240px">
             <label>Tema</label>
             <select id="themeSelect">
@@ -2458,13 +2602,72 @@ function renderOpcionesRoute(){
       </div>
 
       <div class="card">
+        <div class="card__title">Datos comerciales por defecto</div>
+        <div class="card__subtitle">Se usarán en CashVolt y en la cotización final</div>
+        <div class="grid cols-2" style="margin-top:10px">
+          <div class="field">
+            <label>Nombre del asesor</label>
+            <input id="prefAdvisor" value="${escapeAttr(prefs.company?.advisorName || '')}" />
+          </div>
+          <div class="field">
+            <label>Nombre de la empresa</label>
+            <input id="prefCompany" value="${escapeAttr(prefs.company?.companyName || '')}" />
+          </div>
+          <div class="field">
+            <label>Correo</label>
+            <input id="prefEmail" value="${escapeAttr(prefs.company?.companyEmail || '')}" />
+          </div>
+          <div class="field">
+            <label>Teléfono</label>
+            <input id="prefPhone" value="${escapeAttr(prefs.company?.companyPhone || '')}" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__title">Parámetros por defecto de cotización</div>
+        <div class="card__subtitle">Sirven para nuevas cotizaciones y captura manual</div>
+        <div class="grid cols-3" style="margin-top:10px">
+          <div class="field">
+            <label>Producción promedio</label>
+            <input id="prefYield" type="number" min="60" max="220" step="1" value="${escapeAttr(String(prefs.quoteDefaults?.yieldKwhPerKwpMonth || 135))}" />
+          </div>
+          <div class="field">
+            <label>Panel (W)</label>
+            <input id="prefPanel" type="number" min="350" max="700" step="10" value="${escapeAttr(String(prefs.quoteDefaults?.panelWatts || 550))}" />
+          </div>
+          <div class="field">
+            <label>Costo por kWp</label>
+            <input id="prefCost" type="number" min="12000" max="60000" step="500" value="${escapeAttr(String(prefs.quoteDefaults?.costPerKwp || 22000))}" />
+          </div>
+          <div class="field">
+            <label>Contingencia</label>
+            <input id="prefCont" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(prefs.quoteDefaults?.contingencyPct || 0.06))}" />
+          </div>
+          <div class="field">
+            <label>IVA por defecto</label>
+            <input id="prefTax" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(prefs.quoteDefaults?.taxPct || 0.16))}" />
+          </div>
+          <div class="field">
+            <label>OCR agresivo</label>
+            <select id="prefOcrAggressive">
+              <option value="true" ${prefs.ocr?.aggressiveMode ? 'selected' : ''}>Activado</option>
+              <option value="false" ${!prefs.ocr?.aggressiveMode ? 'selected' : ''}>Desactivado</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="wizard-actions" style="justify-content:flex-end; margin-top:12px">
+          <button class="btn btn--primary" id="btnSavePrefs"><i data-lucide="save"></i>Guardar preferencias</button>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card__title">Datos</div>
         <div class="card__subtitle">Administración de historial y proyectos</div>
 
         <div class="row" style="align-items:center">
-          <div class="help" style="flex:1">
-            Puedes limpiar el historial y proyectos almacenados localmente.
-          </div>
+          <div class="help" style="flex:1">Puedes limpiar el historial y proyectos almacenados en la base de datos visible desde esta interfaz.</div>
           <button class="btn btn--danger" id="btnReset"><i data-lucide="trash-2"></i>Limpiar todo</button>
         </div>
       </div>
@@ -2473,12 +2676,36 @@ function renderOpcionesRoute(){
 
   $('#themeSelect').addEventListener('change', (e) => {
     const t = e.target.value;
-    document.documentElement.dataset.theme = t;
-    localStorage.setItem('secom_theme', t);
+    state.preferences.theme = t;
+    saveUserPreferences(state.preferences);
+    applyTheme(t);
     toast({ title:'Tema actualizado', message:`Modo ${t === 'dark' ? 'oscuro' : 'claro'} activado.`, icon:'palette' });
-
-    // If a chart exists, re-render to refresh tick colors
     if (state.route === 'cotizador' && state.wizardStep === 3) renderChart();
+  });
+
+  $('#btnSavePrefs')?.addEventListener('click', () => {
+    state.preferences = saveUserPreferences({
+      ...state.preferences,
+      company: {
+        advisorName: $('#prefAdvisor')?.value || '',
+        companyName: $('#prefCompany')?.value || '',
+        companyEmail: $('#prefEmail')?.value || '',
+        companyPhone: $('#prefPhone')?.value || '',
+        companyWebsite: state.preferences.company?.companyWebsite || 'https://cashvolt.mx/public/login',
+      },
+      quoteDefaults: {
+        yieldKwhPerKwpMonth: Number($('#prefYield')?.value || 135),
+        panelWatts: Number($('#prefPanel')?.value || 550),
+        costPerKwp: Number($('#prefCost')?.value || 22000),
+        contingencyPct: Number($('#prefCont')?.value || 0.06),
+        taxPct: Number($('#prefTax')?.value || 0.16),
+      },
+      ocr: {
+        ...(state.preferences.ocr || {}),
+        aggressiveMode: String($('#prefOcrAggressive')?.value || 'true') === 'true',
+      }
+    });
+    toast({ title:'Preferencias guardadas', message:'Los valores por defecto se actualizaron correctamente.', icon:'save' });
   });
 
   $('#btnReset').addEventListener('click', () => {
@@ -2500,7 +2727,7 @@ function renderOpcionesRoute(){
       toast({ title:'Datos eliminados', message:'Historial y proyectos han sido limpiados.', icon:'check-circle' });
       closeModal();
       renderHistorialTable();
-      renderProyectosTable();
+      renderProyectosRoute();
       resetWizard(true);
       setRoute('cotizador');
     });

@@ -75,9 +75,7 @@ public class QuotesServlet extends HttpServlet {
         }
 
         try {
-            Map<String, Object> patch = new LinkedHashMap<>();
-            patch.put("status", "Guardada");
-            BackendStore.updateQuote(id, patch);
+            BackendStore.deleteQuote(id);
             JsonResponse.send(response, HttpServletResponse.SC_OK, Map.of("ok", true));
         } catch (Exception ex) {
             sendError(response, ex);

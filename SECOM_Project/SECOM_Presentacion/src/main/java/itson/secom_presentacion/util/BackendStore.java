@@ -143,6 +143,70 @@ public final class BackendStore {
         }
     }
 
+    public static void deleteQuote(String frontId) throws Exception {
+        int quoteId = parseFrontId(frontId);
+        if (quoteId <= 0) {
+            throw new IllegalArgumentException("ID de cotización inválido.");
+        }
+
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE cotizaciones SET deleted_at = NOW(), updated_at = NOW() WHERE id = ? AND deleted_at IS NULL")) {
+                ps.setInt(1, quoteId);
+                int rows = ps.executeUpdate();
+                if (rows == 0) {
+                    throw new IllegalStateException("No se encontró la cotización indicada.");
+                }
+            }
+        } finally {
+            db.close();
+        }
+    }
+
+    public static int resetAllData() throws Exception {
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+
+        try {
+            conn.setAutoCommit(false);
+            int affected = 0;
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE proyecto_materiales pm JOIN proyectos p ON p.id = pm.proyecto_id SET pm.deleted_at = NOW() WHERE pm.deleted_at IS NULL AND p.deleted_at IS NULL")) {
+                affected += ps.executeUpdate();
+            } catch (SQLException ignore) {
+                // La tabla puede no existir en instalaciones mínimas.
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE proyectos SET deleted_at = NOW(), updated_at = NOW() WHERE deleted_at IS NULL")) {
+                affected += ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE cotizaciones SET deleted_at = NOW(), updated_at = NOW() WHERE deleted_at IS NULL")) {
+                affected += ps.executeUpdate();
+            }
+
+            conn.commit();
+            return affected;
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
     // =========================================================
     // PROJECTS
     // =========================================================
