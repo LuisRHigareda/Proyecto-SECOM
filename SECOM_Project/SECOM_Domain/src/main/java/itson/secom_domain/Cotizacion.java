@@ -6,6 +6,7 @@ package itson.secom_domain;
 
 import itson.secom_domain.enumeradores.EstadoCotizacion;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  *
@@ -14,29 +15,37 @@ import java.time.LocalDate;
 public class Cotizacion {
 
     private int id;
-    private String folio;
-    private LocalDate fechaEmision;
-    private double consumoEstimado;
-    private double total;
-    private EstadoCotizacion estado;
-    private LocalDate vigencia;
+    private LocalDateTime fecha;
 
+    private Vendedor vendedor;
     private Cliente cliente;
+    private Paquete paquete;
+
+    private double consumoPromedioMensualKwh;
+    private double consumoPromedioDiarioKwh;
+    private double costoPromedioMensual;
+    private double costoPromedioAnual;
+
+    private double wattsInstalados;
+    private double produccionDiariaEstimada;
+    private double porcentajeCobertura;
+    private double retornoInversion;
+
+    private double subtotal;
+    private double iva;
+    private double total;
+
+    private EstadoCotizacion estado;
+    private boolean financiamiento;
+    private boolean proyectoGenerado;
+    private String notas;
+
+    private int createdBy;
+    private int updatedBy;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public Cotizacion() {
-    }
-
-    public Cotizacion(int id, String folio, LocalDate fechaEmision,
-            double consumoEstimado, double total,
-            EstadoCotizacion estado, LocalDate vigencia, Cliente cliente) {
-        this.id = id;
-        this.folio = folio;
-        this.fechaEmision = fechaEmision;
-        this.consumoEstimado = consumoEstimado;
-        this.total = total;
-        this.estado = estado;
-        this.vigencia = vigencia;
-        this.cliente = cliente;
     }
 
     public int getId() {
@@ -47,28 +56,116 @@ public class Cotizacion {
         this.id = id;
     }
 
-    public String getFolio() {
-        return folio;
+    public LocalDateTime getFecha() {
+        return fecha;
     }
 
-    public void setFolio(String folio) {
-        this.folio = folio;
+    public void setFecha(LocalDateTime fecha) {
+        this.fecha = fecha;
     }
 
-    public LocalDate getFechaEmision() {
-        return fechaEmision;
+    public Vendedor getVendedor() {
+        return vendedor;
     }
 
-    public void setFechaEmision(LocalDate fechaEmision) {
-        this.fechaEmision = fechaEmision;
+    public void setVendedor(Vendedor vendedor) {
+        this.vendedor = vendedor;
     }
 
-    public double getConsumoEstimado() {
-        return consumoEstimado;
+    public Cliente getCliente() {
+        return cliente;
     }
 
-    public void setConsumoEstimado(double consumoEstimado) {
-        this.consumoEstimado = consumoEstimado;
+    public void setCliente(Cliente cliente) {
+        this.cliente = cliente;
+    }
+
+    public Paquete getPaquete() {
+        return paquete;
+    }
+
+    public void setPaquete(Paquete paquete) {
+        this.paquete = paquete;
+    }
+
+    public double getConsumoPromedioMensualKwh() {
+        return consumoPromedioMensualKwh;
+    }
+
+    public void setConsumoPromedioMensualKwh(double consumoPromedioMensualKwh) {
+        this.consumoPromedioMensualKwh = consumoPromedioMensualKwh;
+    }
+
+    public double getConsumoPromedioDiarioKwh() {
+        return consumoPromedioDiarioKwh;
+    }
+
+    public void setConsumoPromedioDiarioKwh(double consumoPromedioDiarioKwh) {
+        this.consumoPromedioDiarioKwh = consumoPromedioDiarioKwh;
+    }
+
+    public double getCostoPromedioMensual() {
+        return costoPromedioMensual;
+    }
+
+    public void setCostoPromedioMensual(double costoPromedioMensual) {
+        this.costoPromedioMensual = costoPromedioMensual;
+    }
+
+    public double getCostoPromedioAnual() {
+        return costoPromedioAnual;
+    }
+
+    public void setCostoPromedioAnual(double costoPromedioAnual) {
+        this.costoPromedioAnual = costoPromedioAnual;
+    }
+
+    public double getWattsInstalados() {
+        return wattsInstalados;
+    }
+
+    public void setWattsInstalados(double wattsInstalados) {
+        this.wattsInstalados = wattsInstalados;
+    }
+
+    public double getProduccionDiariaEstimada() {
+        return produccionDiariaEstimada;
+    }
+
+    public void setProduccionDiariaEstimada(double produccionDiariaEstimada) {
+        this.produccionDiariaEstimada = produccionDiariaEstimada;
+    }
+
+    public double getPorcentajeCobertura() {
+        return porcentajeCobertura;
+    }
+
+    public void setPorcentajeCobertura(double porcentajeCobertura) {
+        this.porcentajeCobertura = porcentajeCobertura;
+    }
+
+    public double getRetornoInversion() {
+        return retornoInversion;
+    }
+
+    public void setRetornoInversion(double retornoInversion) {
+        this.retornoInversion = retornoInversion;
+    }
+
+    public double getSubtotal() {
+        return subtotal;
+    }
+
+    public void setSubtotal(double subtotal) {
+        this.subtotal = subtotal;
+    }
+
+    public double getIva() {
+        return iva;
+    }
+
+    public void setIva(double iva) {
+        this.iva = iva;
     }
 
     public double getTotal() {
@@ -87,31 +184,68 @@ public class Cotizacion {
         this.estado = estado;
     }
 
-    public LocalDate getVigencia() {
-        return vigencia;
+    public boolean isFinanciamiento() {
+        return financiamiento;
     }
 
-    public void setVigencia(LocalDate vigencia) {
-        this.vigencia = vigencia;
+    public void setFinanciamiento(boolean financiamiento) {
+        this.financiamiento = financiamiento;
     }
 
-    public Cliente getCliente() {
-        return cliente;
+    public boolean isProyectoGenerado() {
+        return proyectoGenerado;
     }
 
-    public void setCliente(Cliente cliente) {
-        this.cliente = cliente;
+    public void setProyectoGenerado(boolean proyectoGenerado) {
+        this.proyectoGenerado = proyectoGenerado;
+    }
+
+    public String getNotas() {
+        return notas;
+    }
+
+    public void setNotas(String notas) {
+        this.notas = notas;
+    }
+
+    public int getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(int createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public int getUpdatedBy() {
+        return updatedBy;
+    }
+
+    public void setUpdatedBy(int updatedBy) {
+        this.updatedBy = updatedBy;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     @Override
     public String toString() {
-        return "Cotizacion{"
-                + "id=" + id
-                + ", folio='" + folio + '\''
-                + ", fechaEmision=" + fechaEmision
-                + ", total=" + total
-                + ", estado='" + estado + '\''
-                + ", vigencia=" + vigencia
-                + '}';
+        return "Cotizacion{id=" + id
+                + ", cliente=" + (cliente != null ? cliente.getNombreComercial() : "—")
+                + ", consumo=" + consumoPromedioMensualKwh + " kWh/mes"
+                + ", total=$" + total
+                + ", estado=" + estado + "}";
     }
 }

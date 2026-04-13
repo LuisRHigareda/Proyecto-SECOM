@@ -4,6 +4,7 @@
  */
 package itson.secom_persistence;
 
+import itson.secom_persistence.excepciones.PersistenciaException;
 import java.sql.Connection;
 
 /**
@@ -12,7 +13,7 @@ import java.sql.Connection;
  */
 public interface IConnectionBD {
     
-    Connection getConexion();
+    Connection getConexion() throws PersistenciaException;
     
     void close();
 }

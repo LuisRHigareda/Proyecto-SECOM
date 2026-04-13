@@ -9,5 +9,9 @@ package itson.secom_domain.enumeradores;
  * @author PC
  */
 public enum EstadoProyecto {
-    
+    PENDIENTE,
+    EN_PROCESO,
+    INSTALADO,
+    COMPLETADO,
+    CANCELADO
 }

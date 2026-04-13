@@ -4,8 +4,22 @@
  */
 package itson.secom_persistence.conexionFactory;
 
+import itson.secom_persistence.ICalculoSolarDAO;
 import itson.secom_persistence.IConnectionBD;
+import itson.secom_persistence.IConsumoMensualDAO;
+import itson.secom_persistence.ICotizacionDAO;
+import itson.secom_persistence.IInsolacionSolarDAO;
 import itson.secom_persistence.connectionDB.ConnectionDB;
+import itson.secom_persistence.implementacion.CalculoSolarDAO;
+import itson.secom_persistence.implementacion.ClientesDAO;
+import itson.secom_persistence.implementacion.ConsumoMensualDAO;
+import itson.secom_persistence.implementacion.CotizacionDAO;
+import itson.secom_persistence.IParametrosSistemaDAO;
+import itson.secom_persistence.IPaqueteCotizacionDAO;
+import itson.secom_persistence.excepciones.PersistenciaException;
+import itson.secom_persistence.implementacion.InsolacionSolarDAO;
+import itson.secom_persistence.implementacion.ParametrosSistemaDAO;
+import itson.secom_persistence.implementacion.PaqueteCotizacionDAO;
 
 /**
  *
@@ -24,7 +38,43 @@ public class DAOFactory {
     public DAOFactory(boolean esPrueba) {
         this.conexion = new ConnectionDB(esPrueba);
     }
+
+    /**
+     * Crea la factory para la conexcion con ClientesDAO
+     *
+     * @return Conexcion con ClientesDAO
+     */
+    public ClientesDAO conexcionClientesDAO() {
+        return new ClientesDAO(conexion);
+    }
+
+    /**
+     * Crea la factory para la conexion con CotizacionDAO
+     *
+     * @return Conexion con CotizacionDAO
+     */
+    public ICotizacionDAO conexionCotizacionDAO() {
+        return new CotizacionDAO(conexion);
+    }
+
+    public ICalculoSolarDAO conexionCalculoSolarDAO() {
+        return new CalculoSolarDAO(conexion);
+    }
+
+    public IConsumoMensualDAO conexionConsumoMensualDAO() {
+        return new ConsumoMensualDAO(conexion);
+    }
     
+    public IParametrosSistemaDAO conexionParametrosSistemaDAO() {
+    return new ParametrosSistemaDAO(conexion);
+}
+
+public IPaqueteCotizacionDAO conexionPaqueteCotizacionDAO() {
+    return new PaqueteCotizacionDAO(conexion);
+}
+public IInsolacionSolarDAO conexionInsolacionSolarDAO() throws PersistenciaException {
+    return new InsolacionSolarDAO(conexion);
+}
 
     /**
      *
@@ -33,18 +83,18 @@ public class DAOFactory {
      *
      * Ejemplo con UsuariosDAO y ProductosDAO:
      *
-     * public UsuariosDAO conexionUsuariosDAO() {
-     *    return new UsuariosDAO(conexion);
-     * }
-     * 
-     * public ProductosDAO conexionProductosDAO() {
-     *    return new ProductosDAO(conexion);
-     * }
-     * 
-     * 
-     * Se llamaria de la siguiente manera para utilizarse:
-     * (seria ture si fuera de prueba)
-     * DAOFactory factory = new DAOFactory(false);
+     * public UsuariosDAO conexionUsuariosDAO() { return new
+     * UsuariosDAO(conexion); }
+     *
+     * public ProductosDAO conexionProductosDAO() { return new
+     * ProductosDAO(conexion); }
+     *
+     *
+     * Se llamaria de la siguiente manera para utilizarse (por ejemplo en capa
+     * de Negocio):
+     *
+     * (seria ture si fuera de prueba) DAOFactory factory = new
+     * DAOFactory(false);
      *
      * UsuariosDAO usuariosDAO = factory.crearUsuariosDAO();
      *

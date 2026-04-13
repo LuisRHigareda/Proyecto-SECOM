@@ -9,5 +9,8 @@ package itson.secom_domain.enumeradores;
  * @author PC
  */
 public enum EstatusFinanciamiento {
-    
+    ACTIVO,
+    PAGADO,
+    ATRASADO,
+    CANCELADO
 }

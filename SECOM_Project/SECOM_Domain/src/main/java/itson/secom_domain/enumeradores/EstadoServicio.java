@@ -9,5 +9,8 @@ package itson.secom_domain.enumeradores;
  * @author PC
  */
 public enum EstadoServicio {
-    
+    PROGRAMADO,
+    EN_PROCESO,
+    COMPLETADO,
+    CANCELADO
 }

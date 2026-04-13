@@ -12,6 +12,7 @@ public enum RolUsuario {
     
     CLIENTE,
     VENDEDOR,
-    ADMIN
+    ADMIN,
+    TECNICO
     
 }

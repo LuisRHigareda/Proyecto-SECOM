@@ -9,5 +9,7 @@ package itson.secom_domain.enumeradores;
  * @author PC
  */
 public enum TipoFinanciamiento {
-    
+    CONTADO,
+    CREDITO,
+    LEASING
 }

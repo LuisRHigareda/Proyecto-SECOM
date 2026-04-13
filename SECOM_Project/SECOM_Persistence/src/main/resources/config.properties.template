@@ -12,3 +12,4 @@ db.usuario=usuario_mysql
 db.contrasenia=tu_concontrasenia_mysql
 db.ip=ip_servidor_mysql
 db.puerto=puerto_servidor_mysql
+

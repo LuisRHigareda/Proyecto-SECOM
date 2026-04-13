@@ -9,5 +9,16 @@ package itson.secom_domain.enumeradores;
  * @author PC
  */
 public enum CategoriaProducto {
-    
+    PANEL,
+    INVERSOR,
+    ESTRUCTURA,
+    CABLEADO,
+    PIEZA_ALUMINIO,
+    OTROS;
+
+    public boolean equalsIgnoreCase(String categoria) {
+    return this.name().equalsIgnoreCase(categoria.trim());
+}
+
+  
 }
