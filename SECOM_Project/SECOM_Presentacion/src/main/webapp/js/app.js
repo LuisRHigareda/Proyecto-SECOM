@@ -2016,6 +2016,23 @@ function renderHistorialTable(){
 function openModalForQuote(q){
   const r = q.receipt || {};
   const c = q.client || {};
+  
+  // 1. Extraer el nombre/etiqueta del paquete
+  const pkgKey = r.instalacion?.paqueteSeleccionado || '';
+  const pkgText = pkgKey ? getPackageSummaryLabel(pkgKey, { quote: q.quote, receipt: r, paneles: q.quote?.paneles, consumoMensual: q.quote?.consumoMensual }) : 'Sin paquete seleccionado';
+
+  // 2. Construir las filas de la tabla de insumos
+  const insumos = Array.isArray(r.insumos) ? r.insumos : [];
+  const insumosHtml = insumos.length ? insumos.map(it => `
+    <tr>
+      <td>${escapeHtml(it.codigo || '-')}</td>
+      <td>${escapeHtml(it.descripcion || '-')}</td>
+      <td>${Number(it.cantidad || 0)} ${escapeHtml(it.unidad || 'UD')}</td>
+      <td style="text-align:right">${formatCurrencyMXN(Number(it.cantidad || 0) * Number(it.precio || 0))}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="4" style="color:var(--muted)">No hay insumos agregados.</td></tr>`;
+
+  // 3. Agregar la nueva tarjeta al diseño del modal
   const body = `
     <div class="grid cols-2">
       <div class="card" style="box-shadow:none">
@@ -2048,6 +2065,26 @@ function openModalForQuote(q){
           <div class="kpi__label">Inversión</div>
           <div class="kpi__value">${formatCurrencyMXN(q.quote?.inversion || 0)}</div>
         </div>
+      </div>
+    </div>
+
+    <div class="card" style="box-shadow:none; margin-top:12px">
+      <div class="card__title">Paquete e Insumos</div>
+      <div class="help" style="margin-bottom:10px">Paquete base: <b>${escapeHtml(pkgText)}</b></div>
+      <div style="max-height:180px; overflow-y:auto;">
+        <table class="table table--tight">
+          <thead>
+            <tr>
+              <th style="text-align:left">Código</th>
+              <th style="text-align:left">Descripción</th>
+              <th style="text-align:left">Cantidad</th>
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${insumosHtml}
+          </tbody>
+        </table>
       </div>
     </div>
   `;
