@@ -5,6 +5,7 @@
 package itson.secom_persistence;
 
 import itson.secom_persistence.connectionDB.ConnectionDB;
+import itson.secom_persistence.excepciones.PersistenciaException;
 import java.sql.Connection;
 
 /**
@@ -13,7 +14,7 @@ import java.sql.Connection;
  */
 public class SECOM_Persistence {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws PersistenciaException {
         ConnectionDB conexion = new ConnectionDB(false);
         
         Connection conn = conexion.getConexion();

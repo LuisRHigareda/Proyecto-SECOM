@@ -8,6 +8,7 @@ import itson.secom_persistence.ICalculoSolarDAO;
 import itson.secom_persistence.IConnectionBD;
 import itson.secom_persistence.IConsumoMensualDAO;
 import itson.secom_persistence.ICotizacionDAO;
+import itson.secom_persistence.IInsolacionSolarDAO;
 import itson.secom_persistence.connectionDB.ConnectionDB;
 import itson.secom_persistence.implementacion.CalculoSolarDAO;
 import itson.secom_persistence.implementacion.ClientesDAO;
@@ -15,6 +16,8 @@ import itson.secom_persistence.implementacion.ConsumoMensualDAO;
 import itson.secom_persistence.implementacion.CotizacionDAO;
 import itson.secom_persistence.IParametrosSistemaDAO;
 import itson.secom_persistence.IPaqueteCotizacionDAO;
+import itson.secom_persistence.excepciones.PersistenciaException;
+import itson.secom_persistence.implementacion.InsolacionSolarDAO;
 import itson.secom_persistence.implementacion.ParametrosSistemaDAO;
 import itson.secom_persistence.implementacion.PaqueteCotizacionDAO;
 
@@ -68,6 +71,9 @@ public class DAOFactory {
 
 public IPaqueteCotizacionDAO conexionPaqueteCotizacionDAO() {
     return new PaqueteCotizacionDAO(conexion);
+}
+public IInsolacionSolarDAO conexionInsolacionSolarDAO() throws PersistenciaException {
+    return new InsolacionSolarDAO(conexion);
 }
 
     /**

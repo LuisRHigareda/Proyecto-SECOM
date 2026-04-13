@@ -5,15 +5,11 @@
 package itson.secom_persistence;
 
 import itson.secom_persistence.excepciones.PersistenciaException;
-import java.sql.Connection;
 
 /**
  *
- * @author Sebas
+ * @author Arell
  */
-public interface IConnectionBD {
-    
-    Connection getConexion() throws PersistenciaException;
-    
-    void close();
+public interface IInsolacionSolarDAO extends AutoCloseable {
+    double obtenerHspPorCiudad(String ciudad) throws PersistenciaException;
 }

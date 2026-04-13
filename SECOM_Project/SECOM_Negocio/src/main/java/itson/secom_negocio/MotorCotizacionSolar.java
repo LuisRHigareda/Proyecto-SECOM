@@ -219,213 +219,149 @@ public class MotorCotizacionSolar {
 
 
 
+/**
+ * Motor encargado de realizar los cálculos de la cotización
+ * de un sistema fotovoltaico siguiendo la lógica del Excel.
+ */
+
+
     public ResultadoCalculoCotizacion calcular(
-            DatosReciboCFE datos,
-            ParametrosSistema params,
-            List<ProductoCantidad> productosBase) throws Exception {
-
-        validar(datos, params, productosBase);
-
-        ResultadoCalculoCotizacion r = new ResultadoCalculoCotizacion();
-        r.setNombreCliente(datos.getNombreCliente());
-        r.setCiudad(datos.getCiudad());
-
-        double consumoMensual = calcularConsumoMensual(datos);
-        double consumoDiario = consumoMensual / 30.0;
-
-        r.setConsumoPromedioMensualKwh(consumoMensual);
-        r.setConsumoPromedioDiarioKwh(consumoDiario);
-
-        double kwpRequerido = consumoDiario / (params.getHsp() * params.getEficiencia());
-        r.setKwpRequerido(kwpRequerido);
-
-        List<ProductoCantidad> productosAjustados = clonarLista(productosBase);
-
-        dimensionarSegunPaquete(productosAjustados, consumoMensual, params, r);
-
-        double subtotal = calcularSubtotal(productosAjustados);
-        double iva = subtotal * params.getIva();
-        double total = subtotal + iva;
-
-        r.setSubtotal(subtotal);
-        r.setIva(iva);
-        r.setTotal(total);
-
-        double costoMensualActual = consumoMensual * params.getPrecioKwhReferencia();
-        double costoAnualActual = costoMensualActual * 12.0;
-
-        r.setCostoPromedioMensual(costoMensualActual);
-        r.setCostoPromedioAnual(costoAnualActual);
-
-        if (costoAnualActual > 0) {
-            r.setRetornoInversion(total / costoAnualActual);
-        } else {
-            r.setRetornoInversion(0);
-        }
-
-        r.setProductosFinales(productosAjustados);
-
-        return r;
-    }
-
-    private void dimensionarSegunPaquete(
-            List<ProductoCantidad> productos,
-            double consumoMensual,
-            ParametrosSistema params,
-            ResultadoCalculoCotizacion r) {
-
-        ProductoCantidad panelBase = buscarPanel(productos);
-
-        double panelesBase = panelBase.getCantidad();
-        double potenciaPanelW = panelBase.getProducto().getCapacidad();
-
-        int panelesFinales = (int) Math.ceil(panelesBase);
-        double cobertura = 0;
-
-        while (cobertura < 100.0) {
-            double wattsTemporales = panelesFinales * potenciaPanelW;
-            double produccionDiariaTemporal = (wattsTemporales / 1000.0) * params.getHsp() * params.getEficiencia();
-            double produccionMensualTemporal = produccionDiariaTemporal * 30.0;
-
-            cobertura = (produccionMensualTemporal / consumoMensual) * 100.0;
-
-            if (cobertura < 100.0) {
-                panelesFinales++;
-            }
-        }
-
-        ajustarProductos(productos, panelesFinales, panelesBase);
-
-        double wattsInstalados = calcularWattsDesdeProductos(productos);
-        double kwpInstalados = wattsInstalados / 1000.0;
-        double produccionDiaria = kwpInstalados * params.getHsp() * params.getEficiencia();
-        double produccionMensual = produccionDiaria * 30.0;
-
-        r.setNumeroPaneles(panelesFinales);
-        r.setWattsInstalados(wattsInstalados);
-        r.setPotenciaInstaladaKwp(kwpInstalados);
-        r.setProduccionDiariaEstimada(produccionDiaria);
-        r.setGeneracionMensualEstimadaKwh(produccionMensual);
-        r.setPorcentajeCobertura((produccionMensual / consumoMensual) * 100.0);
-    }
-
-    private ProductoCantidad buscarPanel(List<ProductoCantidad> productos) {
-        for (ProductoCantidad pc : productos) {
-            if (pc.getProducto() != null
-                    && pc.getProducto().getCategoria() != null
-                    && pc.getProducto().getCategoria().equalsIgnoreCase("PANEL")) {
-                return pc;
-            }
-        }
-        throw new RuntimeException("El paquete seleccionado no contiene un producto tipo PANEL.");
-    }
-
-    private void ajustarProductos(List<ProductoCantidad> productos, int panelesFinales, double panelesBase) {
-        double factor = panelesFinales / panelesBase;
-
-        for (ProductoCantidad pc : productos) {
-            CategoriaProducto categoria = pc.getProducto().getCategoria();
-
-            if (categoria == CategoriaProducto.PANEL) {
-                pc.setCantidad(panelesFinales);
-            } else {
-                pc.setCantidad(Math.ceil(pc.getCantidad() * factor));
-            }
-        }
-    }
-
-    private double calcularWattsDesdeProductos(List<ProductoCantidad> productos) {
-        double totalWatts = 0;
-
-        for (ProductoCantidad pc : productos) {
-            if (pc.getProducto().getCategoria().equalsIgnoreCase("PANEL")) {
-                totalWatts += pc.getProducto().getCapacidad() * pc.getCantidad();
-            }
-        }
-
-        return totalWatts;
-    }
-
-    private double calcularSubtotal(List<ProductoCantidad> productos) {
-        double subtotal = 0;
-
-        for (ProductoCantidad pc : productos) {
-            subtotal += pc.getProducto().getPrecioUnitario()* pc.getCantidad();
-        }
-
-        return subtotal;
-    }
-
-    private double calcularConsumoMensual(DatosReciboCFE datos) {
-        List<Double> consumos = datos.getConsumosComoLista();
-
-        if (consumos == null || consumos.isEmpty()) {
-            return 0;
-        }
-
-        double suma = 0;
-        int n = 0;
-
-        for (Double c : consumos) {
-            if (c != null && c > 0) {
-                suma += c;
-                n++;
-            }
-        }
-
-        if (n == 0) {
-            return 0;
-        }
-
-        double promedio = suma / n;
-
-        return datos.getTipoTarifa().isEsBimestral() ? promedio / 2.0 : promedio;
-    }
-
-    private List<ProductoCantidad> clonarLista(List<ProductoCantidad> original) {
-        List<ProductoCantidad> copia = new ArrayList<>();
-
-        for (ProductoCantidad pc : original) {
-            ProductoCantidad nuevo = new ProductoCantidad();
-            nuevo.setProducto(pc.getProducto());
-            nuevo.setCantidad(pc.getCantidad());
-            copia.add(nuevo);
-        }
-
-        return copia;
-    }
-
-    private void validar(
             DatosReciboCFE datos,
             ParametrosSistema params,
             List<ProductoCantidad> productos) throws Exception {
 
+        validar(datos, params, productos);
+
+        ResultadoCalculoCotizacion resultado = new ResultadoCalculoCotizacion();
+        resultado.setNombreCliente(datos.getNombreCliente());
+        resultado.setCiudad(datos.getCiudad());
+
+        // =========================
+        // CONSUMO
+        // =========================
+        double consumoMensual = calcularConsumoMensual(datos);
+        double consumoDiario = consumoMensual / 30.0;
+
+        resultado.setConsumoPromedioMensualKwh(consumoMensual);
+        resultado.setConsumoPromedioDiarioKwh(consumoDiario);
+
+        // =========================
+        // kW REQUERIDOS
+        // Fórmula del Excel:
+        // kW = (ConsumoDiario * FactorConversion * FactorSistema) / HSP
+        // =========================
+        double kwpRequerido = (consumoDiario
+                * params.getFactorConversion()
+                * params.getFactorSistema())
+                / params.getHsp();
+
+        resultado.setKwpRequerido(kwpRequerido);
+
+        // =========================
+        // PANEL DEL PAQUETE
+        // =========================
+        ProductoCantidad panelPc = buscarPanel(productos);
+        double potenciaPanelW = panelPc.getProducto().getCapacidad();
+        int numeroPaneles = (int) Math.round(panelPc.getCantidad());
+
+        // =========================
+        // WATTS INSTALADOS
+        // =========================
+        double wattsInstalados = numeroPaneles * potenciaPanelW;
+
+        resultado.setNumeroPaneles(numeroPaneles);
+        resultado.setWattsInstalados(wattsInstalados);
+        resultado.setPotenciaInstaladaKwp(wattsInstalados / 1000.0);
+
+        // =========================
+        // PRODUCCIÓN DE ENERGÍA
+        // Producción diaria = (WattsInstalados * HSP * Eficiencia) / 1000
+        // =========================
+        double produccionDiaria = (wattsInstalados
+                * params.getHsp()
+                * params.getEficiencia()) / 1000.0;
+
+        double produccionMensual = produccionDiaria * 30.0;
+        double cobertura = (produccionDiaria / consumoDiario) * 100.0;
+
+        resultado.setProduccionDiariaEstimada(produccionDiaria);
+        resultado.setGeneracionMensualEstimadaKwh(produccionMensual);
+        resultado.setPorcentajeCobertura(cobertura);
+
+        // =========================
+        // COSTOS
+        // =========================
+        double subtotal = calcularSubtotal(productos);
+        double iva = subtotal * params.getIva();
+        double total = subtotal + iva;
+
+        resultado.setSubtotal(subtotal);
+        resultado.setIva(iva);
+        resultado.setTotal(total);
+
+        // =========================
+        // AHORRO Y RETORNO
+        // =========================
+        double costoMensualActual = consumoMensual * params.getPrecioKwhReferencia();
+        double costoAnualActual = costoMensualActual * 12.0;
+
+        resultado.setCostoPromedioMensual(costoMensualActual);
+        resultado.setCostoPromedioAnual(costoAnualActual);
+
+        double retorno = (costoAnualActual > 0)
+                ? total / costoAnualActual
+                : 0.0;
+
+        resultado.setRetornoInversion(retorno);
+
+        resultado.setProductosFinales(productos);
+
+        return resultado;
+    }
+
+    private double calcularConsumoMensual(DatosReciboCFE datos) {
+        List<Double> consumos = datos.getConsumosComoLista();
+        double suma = consumos.stream().mapToDouble(Double::doubleValue).sum();
+        double promedio = suma / consumos.size();
+
+        if (datos.getTipoTarifa().isEsBimestral()) {
+            promedio = promedio / 2.0;
+        }
+
+        return promedio;
+    }
+
+    private ProductoCantidad buscarPanel(List<ProductoCantidad> productos) {
+        for (ProductoCantidad pc : productos) {
+            if (pc.getProducto().getCategoria() == CategoriaProducto.PANEL) {
+                return pc;
+            }
+        }
+        throw new RuntimeException(
+                "El paquete seleccionado no contiene un producto tipo PANEL.");
+    }
+
+    private double calcularSubtotal(List<ProductoCantidad> productos) {
+        return productos.stream()
+                .mapToDouble(pc ->
+                        pc.getProducto().getPrecioUnitario() * pc.getCantidad())
+                .sum();
+    }
+
+    private void validar(DatosReciboCFE datos,
+                         ParametrosSistema params,
+                         List<ProductoCantidad> productos) throws Exception {
+
         if (datos == null) {
             throw new Exception("Los datos del recibo son obligatorios.");
-        }
-
-        if (datos.getNombreCliente() == null || datos.getNombreCliente().isBlank()) {
-            throw new Exception("El nombre del cliente es obligatorio.");
-        }
-
-        if (datos.getCiudad() == null || datos.getCiudad().isBlank()) {
-            throw new Exception("La ciudad es obligatoria.");
         }
 
         if (datos.getTipoTarifa() == null) {
             throw new Exception("El tipo de tarifa es obligatorio.");
         }
 
-        if (datos.getConsumos()== null || datos.getConsumos().isEmpty()) {
-            throw new Exception("Debes capturar al menos un consumo.");
-        }
-
         if (params == null) {
             throw new Exception("No se pudieron cargar los parámetros del sistema.");
-        }
-
-        if (params.getEficiencia() <= 0 || params.getHsp() <= 0) {
-            throw new Exception("Los parámetros del sistema son inválidos.");
         }
 
         if (productos == null || productos.isEmpty()) {

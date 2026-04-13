@@ -1,19 +1,13 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package itson.secom_pruebacrud;
 
-/**
- *
- * @author Arell
- */
 import itson.secom_domain.DatosReciboCFE;
 import itson.secom_domain.ResultadoCalculoCotizacion;
-import itson.secom_domain.ResultadoCotizacion;
 import itson.secom_domain.enumeradores.TipoTarifa;
 import itson.secom_negocio.CotizacionService;
 import itson.secom_persistence.conexionFactory.DAOFactory;
+import java.text.NumberFormat;
+import java.util.List;
+import java.util.Locale;
 import java.util.Scanner;
 
 public class PruebaCotizacionAlta {
@@ -36,7 +30,7 @@ public class PruebaCotizacionAlta {
             System.out.print("Seleccione una opción: ");
 
             opcion = sc.nextInt();
-            sc.nextLine(); // limpiar buffer
+            sc.nextLine(); // Limpiar buffer
 
             switch (opcion) {
 
@@ -61,9 +55,10 @@ public class PruebaCotizacionAlta {
                         String ciudad = partes[3].trim();
                         String tarifa = partes[4].trim();
 
-                        //  Crear objeto SIN tarifa en constructor
-                        TipoTarifa tipoTarifa = TipoTarifa.valueOf(tarifa.trim().toUpperCase());
+                        // Convertir String a Enum TipoTarifa
+                        TipoTarifa tipoTarifa = TipoTarifa.valueOf(tarifa.toUpperCase());
 
+                        // Crear objeto de dominio
                         DatosReciboCFE datos = new DatosReciboCFE(
                                 nombre,
                                 consumos,
@@ -72,57 +67,75 @@ public class PruebaCotizacionAlta {
                                 tipoTarifa
                         );
 
+                        // =========================
+                        // PRE-CÁLCULO
+                        // =========================
+                        ResultadoCalculoCotizacion previo =
+                                service.calcularCotizacionConPaquete(datos, 1);
 
-                        ResultadoCalculoCotizacion previo
-                                = service.calcularCotizacionConPaquete(datos, 1);
+                        double consumoMensual = previo.getConsumoPromedioMensualKwh();
+
+                        // Calcular consumo promedio diario en kWh y en Watts
+                        double consumoDiarioKwh = consumoMensual / 30.0;
+                        double consumoDiarioWatts = consumoDiarioKwh * 1000;
+
+                        // Formateo para mostrar separador de miles
+                        NumberFormat formato = NumberFormat.getInstance(new Locale("es", "MX"));
+                        formato.setMaximumFractionDigits(0);
+                        formato.setMinimumFractionDigits(0);
 
                         System.out.println("\n--- PRE-CÁLCULO ---");
                         System.out.println("Consumo mensual: "
-                                + previo.getConsumoPromedioMensualKwh() + " kWh");
+                                + String.format("%.2f", consumoMensual) + " kWh");
+                        System.out.println("Consumo promedio diario de energía: "
+                                + formato.format(consumoDiarioWatts) + " W");
                         System.out.println("kW requeridos: "
-                                + previo.getKwpRequerido());
+                                + String.format("%.2f", previo.getKwpRequerido()));
 
-                        // Selección de paquete
+                        // =========================
+                        // SELECCIÓN DE PAQUETE
+                        // =========================
                         System.out.print("\nSeleccione paquete (ID): ");
                         int paqueteId = sc.nextInt();
                         sc.nextLine();
 
-                        CotizacionService service2 = new CotizacionService(new DAOFactory(false));
+                        ResultadoCalculoCotizacion r =
+                                service.calcularCotizacionConPaquete(datos, paqueteId);
 
-
-                        ResultadoCalculoCotizacion r
-                                = service2.calcularCotizacionConPaquete(datos, paqueteId);
-
+                        // =========================
                         // RESULTADO FINAL
+                        // =========================
                         System.out.println("\n========== RESULTADO ==========");
 
                         System.out.println("Cliente: " + r.getNombreCliente());
 
                         System.out.println("\n--- CONSUMO ---");
                         System.out.println("Mensual: "
-                                + r.getConsumoPromedioMensualKwh() + " kWh");
+                                + String.format("%.2f", r.getConsumoPromedioMensualKwh()) + " kWh");
                         System.out.println("Diario: "
-                                + r.getConsumoPromedioDiarioKwh() + " kWh");
+                                + String.format("%.2f", r.getConsumoPromedioDiarioKwh()) + " kWh");
 
                         System.out.println("\n--- SISTEMA ---");
                         System.out.println("kW requeridos: "
-                                + r.getKwpRequerido());
+                                + String.format("%.2f", r.getKwpRequerido()));
                         System.out.println("Watts instalados: "
-                                + r.getWattsInstalados());
+                                + String.format("%.2f", r.getWattsInstalados()));
 
                         System.out.println("\n--- PRODUCCIÓN ---");
                         System.out.println("Producción diaria: "
-                                + r.getProduccionDiariaEstimada());
+                                + String.format("%.2f", r.getProduccionDiariaEstimada()));
                         System.out.println("Cobertura: "
-                                + r.getPorcentajeCobertura() + " %");
+                                + String.format("%.2f", r.getPorcentajeCobertura()) + " %");
 
                         System.out.println("\n--- COSTOS ---");
-                        System.out.println("Subtotal: $" + r.getSubtotal());
-                        System.out.println("IVA: $" + r.getIva());
-                        System.out.println("TOTAL: $" + r.getTotal());
+                        System.out.println("Subtotal: $" + String.format("%.2f", r.getSubtotal()));
+                        System.out.println("IVA: $" + String.format("%.2f", r.getIva()));
+                        System.out.println("TOTAL: $" + String.format("%.2f", r.getTotal()));
 
                         System.out.println("=================================\n");
 
+                    } catch (IllegalArgumentException e) {
+                        System.out.println("Tarifa inválida. Verifique el valor ingresado.");
                     } catch (Exception e) {
                         System.out.println("Error en cotización: " + e.getMessage());
                         e.printStackTrace();
@@ -142,3 +155,30 @@ public class PruebaCotizacionAlta {
         sc.close();
     }
 }
+
+/*
+ * === CASO DE PRUEBA 1 - Paquete No. 1 ===
+ *
+ * Cliente: BORQUEZ MANZ JUAN HUMBERTO
+ * Histórico de consumo (kWh): 309, 599, 1184, 1522, 1653, 1615, 1132, 763, 307, 305, 310, 302
+ * Tipo: MENSUAL | Ciudad Obregón | DOMESTICA_MENSUAL
+ * copia esto -->" BORQUEZ MANZ JUAN HUMBERTO | 309,599,1184,1522,1653,1615,1132,763,307,305,310,302 | MENSUAL | Ciudad Obregon | DOMESTICA_MENSUAL  "
+ * RESULTADO ESPERADO:
+ *   - Producción diaria de energía: 31,861 kWh
+ *   - % Producción vs Consumo: 115%
+ *   - Consumo promedio diario de energía: 27,598 kWh
+ *   - Watts instalados: 6,200 W
+ */
+
+/*
+ * === CASO DE PRUEBA 2 ===
+ *  * copia esto -->"VALENZUELA CARRILLO LUIS CARLOS | 247,461,882,1021,1263,1318,920,621,310,245,238,256 | MENSUAL | Ciudad Obregon | DOMESTICA_MENSUAL"
+*Cliente:VALENZUELA CARRILLO LUIS CARLOS
+*Tipo: MENSUAL | Ciudad Obregón | DOMESTICA_MENSUAL
+ * RESULTADO ESPERADO:
+ *   - Producción diaria de energía: 63,722 kWh
+ *   - % Producción vs Consumo: 105%
+ *   - Consumo promedio diario de energía: 60,688 kWh
+ *   - Watts instalados: 12,400 W
+ */
+

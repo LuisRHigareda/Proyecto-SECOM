@@ -195,6 +195,15 @@ public class DatosReciboCFE {
     private String ciudad;
     private List<Double> consumoHistoricos;
     private TipoTarifa tipoTarifa;
+    private Double consumoDiarioDisenio; // 
+
+public Double getConsumoDiarioDisenio() {
+    return consumoDiarioDisenio;
+}
+
+public void setConsumoDiarioDisenio(Double consumoDiarioDisenio) {
+    this.consumoDiarioDisenio = consumoDiarioDisenio;
+}
 
     public DatosReciboCFE(String nombre, String consumos1, String tipo, String ciudad1) {
         this.consumoHistoricos = new ArrayList<>();
