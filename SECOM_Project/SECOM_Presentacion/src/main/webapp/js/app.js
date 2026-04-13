@@ -838,8 +838,8 @@ function refreshStep2Summary(){
   $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
   $('#step2Panels') && ($('#step2Panels').textContent = `${formatNumber(q.paneles || 0)} paneles`);
   $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
-  $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
   const consumoTexto = state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`;
+  $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
   const packageText = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, { quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual }) : 'Sin paquete seleccionado';
   $('#step2Package') && ($('#step2Package').textContent = packageText);
   $('#packageLabel') && ($('#packageLabel').textContent = packageText);
