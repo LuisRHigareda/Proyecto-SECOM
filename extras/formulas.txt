@@ -1,0 +1,558 @@
+--- Fórmulas encontradas en: COTIZACION SISTEMA FOTOVOLTAICO BIMESTRAL.xlsm ---
+
+
+=== Hoja: Referencias ===
+Celda G7: =F7
+Celda G8: =SUM(F8:F11)/4
+Celda G12: =F12
+Celda G13: =SUM(F13:F17)/5
+Celda G18: =SUM(F18:F20)/3
+Celda G21: =SUM(F21:F22)/2
+Celda G23: =F23
+Celda G24: =F24
+Celda G25: =F25
+Celda G26: =F26
+Celda G27: =SUM(F27:F29)/3
+Celda G30: =F30
+Celda G31: =SUM(F31:F34)/4
+Celda G35: =F35
+Celda G36: =F36
+Celda G37: =F37
+Celda G38: =F38
+Celda G39: =SUM(F39:F40)/2
+Celda G41: =F41
+Celda G42: =F42
+Celda G43: =SUM(F43:F44)/2
+Celda G45: =SUM(F45:F46)/2
+Celda G47: =SUM(F47:F49)/3
+Celda G50: =SUM(F50:F52)/3
+Celda G53: =SUM(F53:F54)/2
+Celda G55: =F55
+Celda G56: =SUM(F56:F58)/3
+Celda G59: =SUM(F59:F61)/3
+Celda G62: =F62
+
+=== Hoja: Tablas ===
+Celda A7: =B6
+Celda J7: =K6
+Celda O7: =P6
+Celda A8: =B7
+Celda J8: =K7
+Celda O8: =P7
+Celda A9: =B8
+Celda J9: =K8
+Celda O9: =P8
+Celda A10: =B9
+Celda J10: =K9
+Celda O10: =P9
+Celda A11: =B10
+Celda A12: =B11
+Celda A13: =B12
+Celda A14: =B13
+Celda A15: =B14
+Celda L18: =L8
+Celda M18: =C11
+Celda L19: =L6
+Celda M19: =C8
+Celda L20: =L19
+Celda M20: =C6
+
+=== Hoja: cal. tierra ===
+Celda C13: =IF(D13=1,0,IF(D13=2,440,IF(D13=3,220,127)))
+Celda E13: =IF(F13=1,0.7,IF(F13=2,0.75,IF(F13=3,0.8,IF(F13=4,0.85,IF(F13=5,0.9,IF(F13=6,0.95,IF(F13=7,1,0)))))))
+Celda L13: =G13*1000/(SQRT(Q13)*C13)
+Celda M13: =H13*1000/(SQRT(Q13)*C13*E13)
+Celda O13: =IF(G13>0,L13,M13)/T13
+Celda P13: =IF(G13>0,L13,M13)
+Celda Q13: =IF(R13=4,3,1)
+Celda S13: =IF(O13=0," ",IF(O13=0,0,VLOOKUP(O13,ELECTRODO,3)))
+Celda U13: =IF(O13=0," ",IF(O13=0,0,VLOOKUP(O13,EXCAVACION,4)))
+Celda V13: =IF(O13=0," ",IF(O13=0,0,VLOOKUP(O13,EXCAVACION,5)))
+Celda W13: =IF(O13=0," ",IF(O13=0,0,VLOOKUP(O13,EXCAVACION,6)))
+Celda Y13: =IF(X13=0," ",IF(X13>=30," ",VLOOKUP(O13,CALIBRE,7)))
+Celda Z13: =IF(X13<30," ",IF(X13<30," ",VLOOKUP(O13,CALIBRE,8)))
+Celda AA13: =IF(X13>=30,Z13,Y13)
+Celda AC13: =IF(AB13=0," ",VLOOKUP(O13/AB13,ACOPLADOR,3))
+Celda AD13: =IF(AB13=0," ",VLOOKUP(O13/AB13,ACOPLADOR,2))
+Celda AF13: =IF(AE13=0," ",VLOOKUP(O13/AE13,BARRA,3))
+Celda AG13: =IF(AE13=0," ",VLOOKUP(O13/AE13,BARRA,2))
+Celda C14: =IF(D14=1,0,IF(D14=2,440,IF(D14=3,220,127)))
+Celda E14: =IF(F14=1,0.7,IF(F14=2,0.75,IF(F14=3,0.8,IF(F14=4,0.85,IF(F14=5,0.9,IF(F14=6,0.95,IF(F14=7,1,0)))))))
+Celda L14: =G14*1000/(SQRT(Q14)*C14)
+Celda M14: =H14*1000/(SQRT(Q14)*C14*E14)
+Celda O14: =IF(G14>0,L14,M14)/T14
+Celda P14: =IF(G14>0,L14,M14)
+Celda Q14: =IF(R14=4,3,1)
+Celda S14: =IF(O14=0," ",IF(O14=0,0,VLOOKUP(O14,ELECTRODO,3)))
+Celda U14: =IF(O14=0," ",IF(O14=0,0,VLOOKUP(O14,EXCAVACION,4)))
+Celda V14: =IF(O14=0," ",IF(O14=0,0,VLOOKUP(O14,EXCAVACION,5)))
+Celda W14: =IF(O14=0," ",IF(O14=0,0,VLOOKUP(O14,EXCAVACION,6)))
+Celda Y14: =IF(X14=0," ",IF(X14>=30," ",VLOOKUP(O14,CALIBRE,7)))
+Celda Z14: =IF(X14<30," ",IF(X14<30," ",VLOOKUP(O14,CALIBRE,8)))
+Celda AA14: =IF(X14>=30,Z14,Y14)
+Celda AC14: =IF(AB14=0," ",VLOOKUP(O14/AB14,ACOPLADOR,3))
+Celda AD14: =IF(AB14=0," ",VLOOKUP(O14/AB14,ACOPLADOR,2))
+Celda AF14: =IF(AE14=0," ",VLOOKUP(O14/AE14,BARRA,3))
+Celda AG14: =IF(AE14=0," ",VLOOKUP(O14/AE14,BARRA,2))
+Celda C15: =IF(D15=1,0,IF(D15=2,440,IF(D15=3,220,127)))
+Celda E15: =IF(F15=1,0.7,IF(F15=2,0.75,IF(F15=3,0.8,IF(F15=4,0.85,IF(F15=5,0.9,IF(F15=6,0.95,IF(F15=7,1,0)))))))
+Celda L15: =G15*1000/(SQRT(Q15)*C15)
+Celda M15: =H15*1000/(SQRT(Q15)*C15*E15)
+Celda O15: =IF(G15>0,L15,M15)/T15
+Celda P15: =IF(G15>0,L15,M15)
+Celda Q15: =IF(R15=4,3,1)
+Celda S15: =IF(O15=0," ",IF(O15=0,0,VLOOKUP(O15,ELECTRODO,3)))
+Celda U15: =IF(O15=0," ",IF(O15=0,0,VLOOKUP(O15,EXCAVACION,4)))
+Celda V15: =IF(O15=0," ",IF(O15=0,0,VLOOKUP(O15,EXCAVACION,5)))
+Celda W15: =IF(O15=0," ",IF(O15=0,0,VLOOKUP(O15,EXCAVACION,6)))
+Celda Y15: =IF(X15=0," ",IF(X15>=30," ",VLOOKUP(O15,CALIBRE,7)))
+Celda Z15: =IF(X15<30," ",IF(X15<30," ",VLOOKUP(O15,CALIBRE,8)))
+Celda AA15: =IF(X15>=30,Z15,Y15)
+Celda AC15: =IF(AB15=0," ",VLOOKUP(O15/AB15,ACOPLADOR,3))
+Celda AD15: =IF(AB15=0," ",VLOOKUP(O15/AB15,ACOPLADOR,2))
+Celda AF15: =IF(AE15=0," ",VLOOKUP(O15/AE15,BARRA,3))
+Celda AG15: =IF(AE15=0," ",VLOOKUP(O15/AE15,BARRA,2))
+Celda C16: =IF(D16=1,0,IF(D16=2,440,IF(D16=3,220,127)))
+Celda E16: =IF(F16=1,0.7,IF(F16=2,0.75,IF(F16=3,0.8,IF(F16=4,0.85,IF(F16=5,0.9,IF(F16=6,0.95,IF(F16=7,1,0)))))))
+Celda L16: =G16*1000/(SQRT(Q16)*C16)
+Celda M16: =H16*1000/(SQRT(Q16)*C16*E16)
+Celda O16: =IF(G16>0,L16,M16)/T16
+Celda P16: =IF(G16>0,L16,M16)
+Celda Q16: =IF(R16=4,3,1)
+Celda S16: =IF(O16=0," ",IF(O16=0,0,VLOOKUP(O16,ELECTRODO,3)))
+Celda U16: =IF(O16=0," ",IF(O16=0,0,VLOOKUP(O16,EXCAVACION,4)))
+Celda V16: =IF(O16=0," ",IF(O16=0,0,VLOOKUP(O16,EXCAVACION,5)))
+Celda W16: =IF(O16=0," ",IF(O16=0,0,VLOOKUP(O16,EXCAVACION,6)))
+Celda Y16: =IF(X16=0," ",IF(X16>=30," ",VLOOKUP(O16,CALIBRE,7)))
+Celda Z16: =IF(X16<30," ",IF(X16<30," ",VLOOKUP(O16,CALIBRE,8)))
+Celda AA16: =IF(X16>=30,Z16,Y16)
+Celda AC16: =IF(AB16=0," ",VLOOKUP(O16/AB16,ACOPLADOR,3))
+Celda AD16: =IF(AB16=0," ",VLOOKUP(O16/AB16,ACOPLADOR,2))
+Celda AF16: =IF(AE16=0," ",VLOOKUP(O16/AE16,BARRA,3))
+Celda AG16: =IF(AE16=0," ",VLOOKUP(O16/AE16,BARRA,2))
+Celda C17: =IF(D17=1,0,IF(D17=2,440,IF(D17=3,220,127)))
+Celda E17: =IF(F17=1,0.7,IF(F17=2,0.75,IF(F17=3,0.8,IF(F17=4,0.85,IF(F17=5,0.9,IF(F17=6,0.95,IF(F17=7,1,0)))))))
+Celda L17: =G17*1000/(SQRT(Q17)*C17)
+Celda M17: =H17*1000/(SQRT(Q17)*C17*E17)
+Celda O17: =IF(G17>0,L17,M17)/T17
+Celda P17: =IF(G17>0,L17,M17)
+Celda Q17: =IF(R17=4,3,1)
+Celda S17: =IF(O17=0," ",IF(O17=0,0,VLOOKUP(O17,ELECTRODO,3)))
+Celda U17: =IF(O17=0," ",IF(O17=0,0,VLOOKUP(O17,EXCAVACION,4)))
+Celda V17: =IF(O17=0," ",IF(O17=0,0,VLOOKUP(O17,EXCAVACION,5)))
+Celda W17: =IF(O17=0," ",IF(O17=0,0,VLOOKUP(O17,EXCAVACION,6)))
+Celda Y17: =IF(X17=0," ",IF(X17>=30," ",VLOOKUP(O17,CALIBRE,7)))
+Celda Z17: =IF(X17<30," ",IF(X17<30," ",VLOOKUP(O17,CALIBRE,8)))
+Celda AA17: =IF(X17>=30,Z17,Y17)
+Celda AC17: =IF(AB17=0," ",VLOOKUP(O17/AB17,ACOPLADOR,3))
+Celda AD17: =IF(AB17=0," ",VLOOKUP(O17/AB17,ACOPLADOR,2))
+Celda AF17: =IF(AE17=0," ",VLOOKUP(O17/AE17,BARRA,3))
+Celda AG17: =IF(AE17=0," ",VLOOKUP(O17/AE17,BARRA,2))
+Celda C27: =IF(D27=1,0,IF(D27=2,440,IF(D27=3,220,127)))
+Celda D27: =IF(B27=1,Tablas!$K$18,IF(B27=2,Tablas!$K$19,IF(B27=3,Tablas!$K$20)))
+Celda F27: =IF(B27=1,Tablas!$N$18,IF(B27=2,Tablas!$N$19,IF(B27=3,Tablas!$N$20)))
+Celda I27: =((G27/F27))
+Celda J27: =(((I27+(2*F27/7)/F27)))
+Celda K27: =H27/F27
+Celda L27: =(((K27+(2*H27/7)/H27)))
+Celda M27: =IF(L27<0.5,1,L27)
+Celda N27: =J27*M27
+Celda P27: =CEILING(N27,1)
+Celda R27: =IF(B27=1,Tablas!$P$18,IF(B27=2,Tablas!$P$19,IF(B27=3,Tablas!$P$20)))
+Celda S27: =IF(B27=1,Tablas!$M$18,IF(B27=2,Tablas!$M$19,IF(B27=3,Tablas!$M$20)))
+Celda U27: =IF(R27=0," ",IF(R27=0,0,VLOOKUP(R27*0.99,EXCAVACION,4)))
+Celda V27: =IF(R27=0," ",IF(R27=0,0,VLOOKUP(R27*0.99,EXCAVACION,5)))
+Celda W27: =IF(R27=0," ",IF(R27=0,0,VLOOKUP(R27*0.99,EXCAVACION,6)))
+Celda Y27: =IF(X27=0," ",IF(X27>=30," ",VLOOKUP(R27*0.99,CALIBRE,7)))
+Celda Z27: =IF(X27<30," ",IF(X27<30," ",VLOOKUP(R27*0.99,CALIBRE,8)))
+Celda AA27: =IF(X27>=30,Z27,Y27)
+Celda AC27: =IF(AB27=0," ",VLOOKUP(R27*1.5/AB27,ACOPLADOR,3))
+Celda AD27: =IF(AB27=0," ",VLOOKUP(R27*1.5/AB27,ACOPLADOR,2))
+Celda AF27: =IF(AE27=0," ",VLOOKUP(R27/AE27,BARRA,3))
+Celda AG27: =IF(AE27=0," ",VLOOKUP(R27/AE27,BARRA,2))
+Celda C28: =IF(D28=1,0,IF(D28=2,440,IF(D28=3,220,127)))
+Celda D28: =IF(B28=1,Tablas!$K$18,IF(B28=2,Tablas!$K$19,IF(B28=3,Tablas!$K$20)))
+Celda F28: =IF(B28=1,Tablas!$N$18,IF(B28=2,Tablas!$N$19,IF(B28=3,Tablas!$N$20)))
+Celda I28: =((G28/F28))
+Celda J28: =(((I28+(2*F28/7)/F28)))
+Celda K28: =H28/F28
+Celda L28: =(((K28+(2*H28/7)/H28)))
+Celda M28: =IF(L28<0.5,1,L28)
+Celda N28: =J28*M28
+Celda P28: =CEILING(N28,1)
+Celda R28: =IF(B28=1,Tablas!$P$18,IF(B28=2,Tablas!$P$19,IF(B28=3,Tablas!$P$20)))
+Celda S28: =IF(B28=1,Tablas!$M$18,IF(B28=2,Tablas!$M$19,IF(B28=3,Tablas!$M$20)))
+Celda U28: =IF(R28=0," ",IF(R28=0,0,VLOOKUP(R28*0.99,EXCAVACION,4)))
+Celda V28: =IF(R28=0," ",IF(R28=0,0,VLOOKUP(R28*0.99,EXCAVACION,5)))
+Celda W28: =IF(R28=0," ",IF(R28=0,0,VLOOKUP(R28*0.99,EXCAVACION,6)))
+Celda Y28: =IF(X28=0," ",IF(X28>=30," ",VLOOKUP(R28*0.99,CALIBRE,7)))
+Celda Z28: =IF(X28<30," ",IF(X28<30," ",VLOOKUP(R28*0.99,CALIBRE,8)))
+Celda AA28: =IF(X28>=30,Z28,Y28)
+Celda AC28: =IF(AB28=0," ",VLOOKUP(R28*1.5/AB28,ACOPLADOR,3))
+Celda AD28: =IF(AB28=0," ",VLOOKUP(R28*1.5/AB28,ACOPLADOR,2))
+Celda AF28: =IF(AE28=0," ",VLOOKUP(R28/AE28,BARRA,3))
+Celda AG28: =IF(AE28=0," ",VLOOKUP(R28/AE28,BARRA,2))
+Celda C29: =IF(D29=1,0,IF(D29=2,440,IF(D29=3,220,127)))
+Celda D29: =IF(B29=1,Tablas!$K$18,IF(B29=2,Tablas!$K$19,IF(B29=3,Tablas!$K$20)))
+Celda F29: =IF(B29=1,Tablas!$N$18,IF(B29=2,Tablas!$N$19,IF(B29=3,Tablas!$N$20)))
+Celda I29: =((G29/F29))
+Celda J29: =(((I29+(2*F29/7)/F29)))
+Celda K29: =H29/F29
+Celda L29: =(((K29+(2*H29/7)/H29)))
+Celda M29: =IF(L29<0.5,1,L29)
+Celda N29: =J29*M29
+Celda P29: =CEILING(N29,1)
+Celda R29: =IF(B29=1,Tablas!$P$18,IF(B29=2,Tablas!$P$19,IF(B29=3,Tablas!$P$20)))
+Celda S29: =IF(B29=1,Tablas!$M$18,IF(B29=2,Tablas!$M$19,IF(B29=3,Tablas!$M$20)))
+Celda U29: =IF(R29=0," ",IF(R29=0,0,VLOOKUP(R29*0.99,EXCAVACION,4)))
+Celda V29: =IF(R29=0," ",IF(R29=0,0,VLOOKUP(R29*0.99,EXCAVACION,5)))
+Celda W29: =IF(R29=0," ",IF(R29=0,0,VLOOKUP(R29*0.99,EXCAVACION,6)))
+Celda Y29: =IF(X29=0," ",IF(X29>=30," ",VLOOKUP(R29*0.99,CALIBRE,7)))
+Celda Z29: =IF(X29<30," ",IF(X29<30," ",VLOOKUP(R29*0.99,CALIBRE,8)))
+Celda AA29: =IF(X29>=30,Z29,Y29)
+Celda AC29: =IF(AB29=0," ",VLOOKUP(R29*1.5/AB29,ACOPLADOR,3))
+Celda AD29: =IF(AB29=0," ",VLOOKUP(R29*1.5/AB29,ACOPLADOR,2))
+Celda AF29: =IF(AE29=0," ",VLOOKUP(R29/AE29,BARRA,3))
+Celda AG29: =IF(AE29=0," ",VLOOKUP(R29/AE29,BARRA,2))
+
+=== Hoja: PROMEDIO DE CONSUMO ===
+Celda B3: =I3
+Celda K3: =PRODUCT(I3:J3)
+Celda M3: =PRODUCT(K3,1.16)
+Celda O3: =SUM(M3,40)
+Celda P3: =SUM(M3,46)
+Celda Q3: =SUM(M3,50)
+Celda R3: =SUM(M3,53)
+Celda S3: =SUM(M3,120)
+Celda B4: =I4
+Celda K4: =PRODUCT(I4,J4)
+Celda M4: =PRODUCT(K4,1.16)
+Celda O4: =SUM(M4,40)
+Celda P4: =SUM(M4,46)
+Celda Q4: =SUM(M4,50)
+Celda R4: =SUM(M4,53)
+Celda S4: =SUM(M4,120)
+Celda B5: =I5
+Celda K5: =PRODUCT(I5,J5)
+Celda M5: =PRODUCT(K5,1.16)
+Celda O5: =SUM(M5,40)
+Celda P5: =SUM(M5,46)
+Celda Q5: =SUM(M5,50)
+Celda R5: =SUM(M5,53)
+Celda S5: =SUM(M5,120)
+Celda B6: =I6
+Celda K6: =PRODUCT(I6,J6)
+Celda M6: =PRODUCT(K6,1.16)
+Celda O6: =SUM(M6,40)
+Celda P6: =SUM(M6,46)
+Celda Q6: =SUM(M6,50)
+Celda R6: =SUM(M6,53)
+Celda S6: =SUM(M6,120)
+Celda B7: =I7
+Celda K7: =PRODUCT(I7,J7)
+Celda M7: =PRODUCT(K7,1.16)
+Celda O7: =SUM(M7,40)
+Celda P7: =SUM(M7,46)
+Celda Q7: =SUM(M7,50)
+Celda R7: =SUM(M7,53)
+Celda S7: =SUM(M7,120)
+Celda B8: =I8
+Celda K8: =PRODUCT(I8,J8)
+Celda M8: =PRODUCT(K8,1.16)
+Celda O8: =SUM(M8,40)
+Celda P8: =SUM(M8,46)
+Celda Q8: =SUM(M8,50)
+Celda R8: =SUM(M8,53)
+Celda S8: =SUM(M8,120)
+Celda B15: =AVERAGE(B3:B8)
+Celda C15: =AVERAGE(C3:C9)
+Celda B16: =+B15*1000/60.5
+Celda D16: =B16*D14
+Celda E16: =B16-D16
+Celda I16: =AVERAGE(I3:I8)
+Celda M16: =AVERAGE(M3:M8)
+Celda O16: =AVERAGE(O3:O14)
+Celda P16: =AVERAGE(P3,P14)
+Celda Q16: =AVERAGE(Q3:Q14)
+Celda R16: =AVERAGE(R3:R14)
+Celda C17: =SUM(I26/2)
+Celda I17: =+I16/60.5
+Celda M17: =SUM(M3:M8)
+Celda O17: =SUM(O3:O14)
+Celda P17: =SUM(P3:P14)
+Celda Q17: =SUM(Q3:Q14)
+Celda R17: =SUM(R3:R14)
+Celda C18: =SUM(I27)
+Celda I26: =AVERAGE(I19:I24)
+Celda I27: =SUM(I19:I24)
+
+=== Hoja: CALCULO DE ENERGIA ===
+Celda C6: =IF(C5=0," ",IF(C5=0,0,VLOOKUP(C5,insolasion,7)))
+Celda P7: =C29*D29
+Celda C10: =C9*C6
+Celda P10: =(C10*C29)/G21
+Celda P15: =PRODUCT(P7,C6)/1.2
+Celda P16: =G21/1.2
+Celda P17: =P15/P16
+Celda D21: =+'PROMEDIO DE CONSUMO'!D16
+Celda E21: =C21*D21
+Celda G21: ='PROMEDIO DE CONSUMO'!B16*F21*$C$7*(1+$C$13/100)
+Celda H21: =(E21*F21*$C$7*(1+$C$13/100))/$C$10
+Celda I21: =G21/$C$11
+Celda J21: =I21/$C$12
+Celda K21: =$C$14+1
+Celda L21: =J21*K21
+Celda M21: =$C$9*H21
+Celda N21: =M21/$C$11
+Celda O21: =E21*$C$13
+Celda P21: =(C10*C29)/G21
+Celda E22: =C22*D22
+Celda G22: ='PROMEDIO DE CONSUMO'!B20*F22*$C$7*(1+$C$13/100)
+Celda H22: =(E22*F22*$C$7*(1+$C$13/100))/$C$10
+Celda I22: =G22/$C$11
+Celda J22: =I22/$C$12
+Celda K22: =$C$14+1
+Celda L22: =J22*K22
+Celda M22: =$C$9*H22
+Celda N22: =M22/$C$11
+Celda O22: =E22*$C$13
+Celda C24: =AVERAGE(C21:C22)
+Celda E24: =SUM(E21:E21)
+Celda F24: =AVERAGE(F21:F22)
+Celda G24: =SUM(G21:G23)
+Celda H24: =SUM(H21:H22)
+Celda I24: =G24/$C$11
+Celda J24: =I24/$C$12
+Celda K24: =$C$14+1
+Celda L24: =(J24*K24)
+Celda M24: =$C$9*H24
+Celda N24: =M24/$C$11
+Celda O24: =SUM(O21:O22)
+Celda P26: =PRODUCT(G24,365.25)/1000
+Celda C29: =IF(MOD(CEILING(H24,1),2)=0, CEILING(H24,1), CEILING(H24,1)+1)
+Celda D29: =C9
+Celda P29: ='CALCULO DE ENERGIA'!P26/'PROMEDIO DE CONSUMO'!J29
+Celda C30: =CEILING(L24,1)
+Celda E30: =C11
+Celda G30: =C12
+Celda D31: =M24
+Celda E31: =C11
+Celda F31: =D31/E31
+Celda D32: =O24
+
+=== Hoja: COTIZACIÓN ===
+Celda J2: ='CALCULO DE ENERGIA'!$P$7
+Celda K2: =J3/J2
+Celda J3: =$G$19
+Celda F5: ='CALCULO DE ENERGIA'!C29
+Celda G5: =+F5*D5
+Celda J5: =(+F5*'CALCULO DE ENERGIA'!D29*0.8)/1000
+Celda F6: =+F5/4
+Celda G6: =+F6*D6
+Celda F7: =+F5
+Celda G7: =+F7*D7
+Celda G8: =+F8*D8
+Celda J8: =+F5*'CALCULO DE ENERGIA'!D29/1000*8/1.3
+Celda G10: =SUM(G5:G9)
+Celda G11: =+G10
+Celda F13: =+F7
+Celda G13: =+F13*D13
+Celda G15: =SUM(G13:G14)
+Celda G17: =+G11+G15
+Celda G18: =(G17*1.16)-G17
+Celda G19: =G17*1.16
+Celda G22: =+G21*G19
+Celda G24: =PRODUCT(F5,9100)
+
+=== Hoja: RECUPERACION ===
+Celda K1: =B3
+Celda L1: =+K1/1000
+Celda B2: ='PROMEDIO DE CONSUMO'!C18
+Celda C2: =B2/COTIZACIÓN!G21
+Celda D2: =+B3/B2
+Celda B3: =COTIZACIÓN!$G$24
+Celda C3: =B3/COTIZACIÓN!G21
+Celda K3: =IRR(J4:J29)
+Celda J4: =-I5
+Celda L4: =+F4
+Celda B5: =(25-D2)*C2
+Celda G5: =+B2/1000
+Celda H5: =G5
+Celda I5: =+$K$1/1000
+Celda J5: =+G5
+Celda L5: =+F5
+Celda B6: =+C3
+Celda G6: =+G5*(1+$G$1)
+Celda H6: =G6+H5
+Celda I6: =+$K$1/1000
+Celda J6: =+G6
+Celda L6: =+F6
+Celda G7: =+G6*(1+$G$1)
+Celda H7: =G7+H6
+Celda I7: =+$K$1/1000
+Celda J7: =+G7
+Celda L7: =+F7
+Celda G8: =+G7*(1+$G$1)
+Celda H8: =G8+H7
+Celda I8: =+$K$1/1000
+Celda J8: =+G8
+Celda L8: =+F8
+Celda G9: =+G8*(1+$G$1)
+Celda H9: =G9+H8
+Celda I9: =+$K$1/1000
+Celda J9: =+G9
+Celda L9: =+F9
+Celda G10: =+G9*(1+$G$1)
+Celda H10: =G10+H9
+Celda I10: =+$K$1/1000
+Celda J10: =+G10
+Celda L10: =+F10
+Celda D11: =B11*C11
+Celda G11: =+G10*(1+$G$1)
+Celda H11: =G11+H10
+Celda I11: =+$K$1/1000
+Celda J11: =+G11
+Celda L11: =+F11
+Celda D12: =SUM(D9:D11)
+Celda G12: =+G11*(1+$G$1)
+Celda H12: =G12+H11
+Celda I12: =+$K$1/1000
+Celda J12: =+G12
+Celda L12: =+F12
+Celda G13: =+G12*(1+$G$1)
+Celda H13: =G13+H12
+Celda I13: =+$K$1/1000
+Celda J13: =+G13
+Celda L13: =+F13
+Celda D14: =B14*C14
+Celda G14: =+G13*(1+$G$1)
+Celda H14: =G14+H13
+Celda I14: =+$K$1/1000
+Celda J14: =+G14
+Celda L14: =+F14
+Celda B15: =7261*0.7
+Celda D15: =B15*C15
+Celda G15: =+G14*(1+$G$1)
+Celda H15: =G15+H14
+Celda I15: =+$K$1/1000
+Celda J15: =+G15
+Celda L15: =+F15
+Celda D16: =B16*C16
+Celda G16: =+G15*(1+$G$1)
+Celda H16: =G16+H15
+Celda I16: =+$K$1/1000
+Celda J16: =+G16
+Celda L16: =+F16
+Celda D17: =SUM(D14:D16)
+Celda G17: =+G16*(1+$G$1)
+Celda H17: =G17+H16
+Celda I17: =+$K$1/1000
+Celda J17: =+G17
+Celda L17: =+F17
+Celda G18: =+G17*(1+$G$1)
+Celda H18: =G18+H17
+Celda I18: =+$K$1/1000
+Celda J18: =+G18
+Celda L18: =+F18
+Celda D19: =B19*C19
+Celda G19: =+G18*(1+$G$1)
+Celda H19: =G19+H18
+Celda I19: =+$K$1/1000
+Celda J19: =+G19
+Celda L19: =+F19
+Celda D20: =B20*C20
+Celda G20: =+G19*(1+$G$1)
+Celda H20: =G20+H19
+Celda I20: =+$K$1/1000
+Celda J20: =+G20
+Celda L20: =+F20
+Celda D21: =B21*C21
+Celda G21: =+G20*(1+$G$1)
+Celda H21: =G21+H20
+Celda I21: =+$K$1/1000
+Celda J21: =+G21
+Celda L21: =+F21
+Celda D22: =B22*C22
+Celda G22: =+G21*(1+$G$1)
+Celda H22: =G22+H21
+Celda I22: =+$K$1/1000
+Celda J22: =+G22
+Celda L22: =+F22
+Celda D23: =SUM(D19:D22)
+Celda G23: =+G22*(1+$G$1)
+Celda H23: =G23+H22
+Celda I23: =+$K$1/1000
+Celda J23: =+G23
+Celda L23: =+F23
+Celda G24: =+G23*(1+$G$1)
+Celda H24: =G24+H23
+Celda I24: =+$K$1/1000
+Celda J24: =+G24
+Celda L24: =+F24
+Celda G25: =+G24*(1+$G$1)
+Celda H25: =G25+H24
+Celda I25: =+$K$1/1000
+Celda J25: =+G25
+Celda L25: =+F25
+Celda G26: =+G25*(1+$G$1)
+Celda H26: =G26+H25
+Celda I26: =+$K$1/1000
+Celda J26: =+G26
+Celda L26: =+F26
+Celda G27: =+G26*(1+$G$1)
+Celda H27: =G27+H26
+Celda I27: =+$K$1/1000
+Celda J27: =+G27
+Celda L27: =+F27
+Celda G28: =+G27*(1+$G$1)
+Celda H28: =G28+H27
+Celda I28: =+$K$1/1000
+Celda J28: =+G28
+Celda L28: =+F28
+Celda G29: =+G28*(1+$G$1)
+Celda H29: =G29+H28
+Celda I29: =+$K$1/1000
+Celda J29: =+G29
+Celda L29: =+F29
+Celda G31: =AVERAGE(G5,G29)
+Celda G32: =SUM(G5,G29)
+
+=== Hoja: FORMATO DE COTIZACION ===
+Celda I4: =TODAY()
+Celda H9: ='CALCULO DE ENERGIA'!P7*'CALCULO DE ENERGIA'!C6
+Celda K9: =H9/H10
+Celda H10: ='CALCULO DE ENERGIA'!G21
+Celda I10: ='CALCULO DE ENERGIA'!P6
+Celda K10: ='CALCULO DE ENERGIA'!P7
+Celda D14: =COTIZACIÓN!B5
+Celda J14: =COTIZACIÓN!F5
+Celda D15: =COTIZACIÓN!B8
+Celda J15: =COTIZACIÓN!F8
+Celda D16: =COTIZACIÓN!B6
+Celda J16: =COTIZACIÓN!F6
+Celda D17: =COTIZACIÓN!B7
+Celda J17: =COTIZACIÓN!F7
+Celda D19: =COTIZACIÓN!B13
+Celda J19: =+COTIZACIÓN!F13
+Celda F22: =PRODUCT(K24,0.7)
+Celda K22: =COTIZACIÓN!G24 /1.16
+Celda F23: =PRODUCT(K24,0.3)
+Celda K23: =+K22*0.16
+Celda F24: =+F22+F23
+Celda K24: =+K22+K23
+Celda J30: =RECUPERACION!D2
+Celda I38: =COTIZACIÓN!J8
+
+=== Hoja: FINANCIAMIENTO 1-8 ===
+Celda B14: ='FORMATO DE COTIZACION'!E5
+Celda B17: ='FORMATO DE COTIZACION'!K24
+Celda B19: =PRODUCT(B17,0.6)
+Celda B21: =PRODUCT(B17,0.4)
+Celda B23: =AVERAGE(B21/6)
+
+=== Hoja: FINANCIAMIENTO 9-16 ===
+Celda B14: ='FORMATO DE COTIZACION'!E5
+Celda B17: ='FORMATO DE COTIZACION'!K24
+Celda B19: =PRODUCT(B17,0.5)
+Celda B21: =PRODUCT(B17,0.5)
+Celda B23: =AVERAGE(B21/6)
