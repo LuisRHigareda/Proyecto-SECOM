@@ -1413,7 +1413,7 @@ function wireStep2(){
       toast({ title:'Dato crítico faltante', message:'El número de servicio es obligatorio para continuar.', icon:'alert-triangle' });
       return;
     }
-    
+
     //Validacion agregada - caso de prueba 2
     const consumoRaw = $('#rConsumo')?.value ?? '';
     const consumoNum = Number(String(consumoRaw).replace(/,/g, '').trim());

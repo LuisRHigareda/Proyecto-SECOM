@@ -10,6 +10,7 @@ import java.util.Properties;
 public class ConnectionDB implements IConnectionBD {
 
     private Connection connection;
+    
 private static final String BD_REAL = "secom";
 private static final String BD_TEST = "secom_test";
 
