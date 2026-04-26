@@ -191,10 +191,10 @@ function parseNombreDireccion(text) {
     const labeledName = normalizeText(text).match(/(?:NOMBRE|CLIENTE|TITULAR)[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]{5,80})/i);
     if (labeledName) {
         const possibleAddress = lines.filter(looksLikeAddressLine).slice(0, 3).join(' ').trim();
-        return { nombre: cleanLine(labeledName[1]), direccion: possibleAddress };
+        return {nombre: cleanLine(labeledName[1]), direccion: possibleAddress};
     }
 
-    let best = { score: -999, nombre: '', direccion: '' };
+    let best = {score: -999, nombre: '', direccion: ''};
 
     for (let i = 0; i < lines.length; i++) {
         const current = cleanLine(lines[i]);
@@ -226,14 +226,14 @@ function parseNombreDireccion(text) {
 
         const direccion = addressLines.join(' ').replace(/\s+/g, ' ').trim();
         if (score > best.score) {
-            best = { score, nombre: current.replace(/\$.*$/, '').trim(), direccion };
+            best = {score, nombre: current.replace(/\$.*$/, '').trim(), direccion};
         }
     }
 
     if (best.score > 0)
-        return { nombre: best.nombre, direccion: best.direccion };
+        return {nombre: best.nombre, direccion: best.direccion};
 
-    return { nombre: '', direccion: '' };
+    return {nombre: '', direccion: ''};
 }
 function parseServicio(text) {
     const lines = buildLines(text);
@@ -481,7 +481,7 @@ function looksCorruptedText(text) {
     if (!hasKeyFields)
         return true;
 
-    const strange = (text.match(/[�]/g) || []).length;
+    const strange = (text.match(/[ ]/g) || []).length;
     return strange > 5;
 }
 
@@ -637,13 +637,20 @@ function scoreRecognizedText(text) {
     const up = normalizeUpper(text);
     const parsedName = parseNombreDireccion(text);
     let score = 0;
-    if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO')) score += 5;
-    if (up.includes('PERIODO FACTURADO')) score += 4;
-    if (up.includes('TOTAL A PAGAR')) score += 4;
-    if (up.includes('TARIFA')) score += 3;
-    if (parseServicio(text)) score += 5;
-    if (parsedName.direccion) score += 4;
-    if (parsedName.nombre) score += 3;
+    if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO'))
+        score += 5;
+    if (up.includes('PERIODO FACTURADO'))
+        score += 4;
+    if (up.includes('TOTAL A PAGAR'))
+        score += 4;
+    if (up.includes('TARIFA'))
+        score += 3;
+    if (parseServicio(text))
+        score += 5;
+    if (parsedName.direccion)
+        score += 4;
+    if (parsedName.nombre)
+        score += 3;
     return score + Math.min(6, Math.round(String(text || '').length / 250));
 }
 
@@ -865,7 +872,7 @@ export function createEmptyReceiptData(selectedTariff = null, rawText = '') {
 async function imageFileToTextAndPreview(file, { onProgress } = {}) {
     const imageBitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', {alpha: false});
 
     const maxSide = 1800;
     const scale = Math.min(1, maxSide / Math.max(imageBitmap.width, imageBitmap.height));
@@ -874,7 +881,7 @@ async function imageFileToTextAndPreview(file, { onProgress } = {}) {
     ctx.drawImage(imageBitmap, 0, 0, canvas.width, canvas.height);
 
     if (onProgress) {
-        onProgress({ message: 'Aplicando OCR a imagen…' });
+        onProgress({message: 'Aplicando OCR a imagen…'});
     }
 
     const text = await runBestOcrVariant(canvas, 1, onProgress);
@@ -893,6 +900,8 @@ export async function analyzeReceiptFile(file, options = {}){
     let text = '';
     let canvas = null;
     let pageTexts = [];
+    let analysisOk = true;
+    let manualReason = '';
 
     if (onProgress)
         onProgress({message: 'Preparando lectura…'});
@@ -913,8 +922,10 @@ export async function analyzeReceiptFile(file, options = {}){
         }
     } catch (err) {
         console.error('Error leyendo recibo:', err);
+        analysisOk = false;
+        manualReason = err?.message || 'No se pudo leer el archivo.';
         if (onProgress)
-            onProgress({message: 'No se pudo leer el archivo. Se habilitará captura manual.'});
+            onProgress({message: `${manualReason} Se habilitará captura manual.`});
     }
 
     let parsed = null;
@@ -930,8 +941,10 @@ export async function analyzeReceiptFile(file, options = {}){
                 );
     } else {
         const label = isPdf ? 'PDF' : 'imagen';
+        analysisOk = false;
+        manualReason = manualReason || `No se pudo extraer texto suficiente del ${label}.`;
         if (onProgress)
-            onProgress({message: `No se pudo leer el ${label}. Se habilitará captura manual.`});
+            onProgress({message: `${manualReason} Se habilitará captura manual.`});
         parsed = createEmptyReceiptData(selectedTariff, text || '');
     }
 
@@ -953,8 +966,25 @@ export async function analyzeReceiptFile(file, options = {}){
         parsed.periodo.raw = parseFechaCortaLabel(parsed.periodo.raw || '');
     }
 
-    if (onProgress)
-        onProgress({message: 'Listo.'});
+    const hasCriticalData = Boolean(
+            parsed.servicio ||
+            parsed.nombre ||
+            parsed.direccion ||
+            Number(parsed.consumoPeriodo || 0) > 0 ||
+            Number(parsed.totalAPagar || 0) > 0
+            );
 
-    return {text, parsed, canvas};
+    if (analysisOk && !hasCriticalData) {
+        analysisOk = false;
+        manualReason = 'No se detectaron datos clave del recibo.';
+    }
+
+    const message = analysisOk
+            ? 'Recibo analizado correctamente.'
+            : `${manualReason || 'No se pudo analizar el recibo.'} Se habilitará captura manual.`;
+
+    if (onProgress)
+        onProgress({message: analysisOk ? 'Listo.' : message});
+
+    return {ok: analysisOk, manual: !analysisOk, message, text, parsed, canvas};
 }
