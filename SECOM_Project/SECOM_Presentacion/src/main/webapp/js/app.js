@@ -1083,20 +1083,36 @@ function refreshStep2Summary() {
     $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
     $('#step2Panels') && ($('#step2Panels').textContent = `${formatNumber(q.paneles || 0)} paneles`);
     $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
+    
     const consumoTexto = state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`;
     $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
     $('#tariffImpactData') && ($('#tariffImpactData').innerHTML = getTariffImpact(state.selectedTariff, q).html);
     $('#step2TariffFormula') && ($('#step2TariffFormula').textContent = getTariffImpact(state.selectedTariff, q).formula);
+    
     const comparisonBox = $('#tariffComparisonBox');
     if (comparisonBox)
         comparisonBox.outerHTML = renderTariffComparisonTable(state.selectedTariff);
-    const packageText = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado';
+    
+
+    let packageText = 'Configuración personalizada';
+    if (state.selectedPackage) {
+        // Buscamos el objeto del paquete para obtener solo el nombre (label)
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
+        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
+        
+        if (pkgObj) {
+            packageText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
+        }
+    }
+
+
     $('#step2Package') && ($('#step2Package').textContent = packageText);
     $('#packageLabel') && ($('#packageLabel').textContent = packageText);
     $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
     $('#step2Alerts') && ($('#step2Alerts').innerHTML = alerts.length
             ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('')
             : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>');
+    
     const preview = $('#packagePreview');
     if (preview)
         preview.innerHTML = renderPackagePreviewItems();
@@ -1698,8 +1714,16 @@ function wireStep2() {
 function renderStep3Left() {
     const q = state.quote || currentStep2Quote();
     state.quote = q;
-    const packageLabel = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete';
-
+    let packageLabel = 'Configuración personalizada';
+    if (state.selectedPackage) {
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
+        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
+        
+        if (pkgObj) {
+            packageLabel = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
+        }
+    }
+    
     return `
     <div class="card__title">Resumen técnico y económico</div>
     <div class="help">Esta vista consolida la información corregida del recibo, el sistema propuesto y los montos estimados. Si necesitas cambiar algo, regresa al paso anterior.</div>
@@ -2302,8 +2326,18 @@ function openModalForQuote(q) {
 
     // 1. Extraer el nombre/etiqueta del paquete
     const pkgKey = r.instalacion?.paqueteSeleccionado || '';
-    const pkgText = pkgKey ? getPackageSummaryLabel(pkgKey, {quote: q.quote, receipt: r, paneles: q.quote?.paneles, consumoMensual: q.quote?.consumoMensual}) : 'Sin paquete seleccionado';
+    let pkgText = 'Configuración personalizada';
+    
+    if (pkgKey) {
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === pkgKey);
+        const numInsumos = Array.isArray(r.insumos) ? r.insumos.length : 0;
+        const inversionActual = q.quote?.inversion || 0;
 
+        if (pkgObj) {
+            pkgText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(inversionActual)}`;
+        }
+    }
+    
     // 2. Construir las filas de la tabla de insumos
     const insumos = Array.isArray(r.insumos) ? r.insumos : [];
     const insumosHtml = insumos.length ? insumos.map(it => `
