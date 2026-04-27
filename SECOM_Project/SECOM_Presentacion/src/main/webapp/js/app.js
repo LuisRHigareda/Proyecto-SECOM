@@ -1122,7 +1122,9 @@ function applyPackagePreset(packageKey) {
     syncStep2State();
     state.selectedPackage = packageKey;
     const q = state.quote || currentStep2Quote();
-    state.receipt.insumos = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
+    const manuales = (state.receipt?.insumos || []).filter(it => it.isManual);
+    const insumosPaquete = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
+    state.receipt.insumos = [...insumosPaquete, ...manuales];
     state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
     state.quote = currentStep2Quote();
     renderWizard();
@@ -1472,6 +1474,7 @@ function normalizeInsumo(it) {
         cantidad: Math.max(0, n(it?.cantidad ?? 1)),
         unidad: String(it?.unidad ?? 'UD').trim() || 'UD',
         precio: Math.max(0, n(it?.precio ?? 0)),
+        isManual: it?.isManual || false
     };
 }
 
@@ -1573,7 +1576,7 @@ function setupInsumosCrud() {
         const base = INSUMO_CATALOG[idx];
         if (!base)
             return;
-        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio});
+        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio, isManual: true});
         if (sel)
             sel.value = '';
         state.quote = null;
@@ -1582,7 +1585,7 @@ function setupInsumosCrud() {
 
     // Agregar manual
     $('#btnAddManual')?.addEventListener('click', () => {
-        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0});
+        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0, isManual: true});
         state.quote = null;
         renderBody();
     });
@@ -1678,6 +1681,15 @@ function wireStep2() {
         state.selectedPackage = '';
         if (state.receipt?.instalacion)
             state.receipt.instalacion.paqueteSeleccionado = '';
+        
+        //Eliminar paquete de la lista de insumos
+        if (state.receipt?.insumos) {
+            const insumosManuales = state.receipt.insumos.filter(insumo => insumo.isManual);
+            state.receipt.insumos.length = 0; 
+            state.receipt.insumos.push(...insumosManuales);
+        }
+        state.quote = null;
+        
         renderWizard();
         toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
     });
