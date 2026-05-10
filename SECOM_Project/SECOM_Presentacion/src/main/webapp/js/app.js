@@ -1,8 +1,8 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
 import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
-import { getQuotes, getProjects, resetAllData, saveProjectFromQuote, saveProject, saveQuote, updateProject, updateQuote, removeProject } from './storage.js';
-import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel } from './catalogData.js';
+import { getQuotes, getProjects, getInsumos, resetAllData, saveInsumo, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updateProject, updateQuote, removeInsumo, removeProject } from './storage.js';
+import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog } from './catalogData.js';
 import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
 const state = {
@@ -44,6 +44,10 @@ const state = {
         file: null,
         data: null,
         status: 'Listo',
+    },
+    insumos: {
+        items: [],
+        search: '',
     }
 };
 
@@ -246,6 +250,7 @@ function init() {
     // Theme y preferencias
     state.preferences = loadUserPreferences();
     applyTheme(state.preferences.theme || 'dark');
+    loadInsumoCatalogSafe(true);
 
     // Icons
     if (window.lucide)
@@ -307,11 +312,16 @@ function setRoute(route) {
         cotizador: {t: 'Crear cotización', c: 'Cotizaciones / Crear'},
         cashvolt: {t: 'CashVolt', c: 'CashVolt / Carga'},
         proyectos: {t: 'Proyectos', c: 'Proyectos / Gestión'},
+        insumos: {t: 'Insumos', c: 'Catálogos / Insumos'},
         historial: {t: 'Lista de cotizaciones', c: 'Cotizaciones / Lista'},
         opciones: {t: 'Preferencias', c: 'Sistema / Preferencias'},
     };
     $('#pageTitle').textContent = titleMap[route]?.t || 'SECOM';
     $('#pageCrumb').textContent = titleMap[route]?.c || '';
+
+    if (route === 'insumos') {
+        renderInsumosRoute();
+    }
 }
 
 function startNewQuoteFlow() {
@@ -339,6 +349,7 @@ function renderAllRoutes() {
     renderCashvoltRoute();
     renderHistorialRoute();
     renderProyectosRoute();
+    renderInsumosRoute();
     renderOpcionesRoute();
 }
 
@@ -2541,6 +2552,389 @@ async function exportPdfFromStoredQuote(q) {
         }
         wrapper.remove();
     }
+}
+
+
+// ------------------------------
+// Insumos (Catálogo global)
+// ------------------------------
+
+function loadInsumoCatalogSafe(silent = false) {
+    try {
+        const items = getInsumos();
+        state.insumos.items = Array.isArray(items) ? items : [];
+        setInsumoCatalog(state.insumos.items);
+        syncCurrentQuoteInsumosWithCatalog();
+        return state.insumos.items;
+    } catch (e) {
+        console.warn('No se pudo cargar el catálogo de insumos.', e);
+        if (!state.insumos.items.length) {
+            state.insumos.items = INSUMO_CATALOG.map(it => ({...it, activo: it.activo !== false}));
+        }
+        if (!silent) {
+            toast({title: 'Catálogo no disponible', message: e?.message || 'No se pudo consultar la base de datos.', icon: 'alert-triangle'});
+        }
+        return state.insumos.items;
+    }
+}
+
+function syncCurrentQuoteInsumosWithCatalog() {
+    const insumos = state.receipt?.insumos;
+    if (!Array.isArray(insumos) || !insumos.length) {
+        return;
+    }
+
+    const byCode = new Map(INSUMO_CATALOG.map(item => [String(item.codigo || '').toUpperCase(), item]));
+    let changed = false;
+
+    state.receipt.insumos = insumos.map(item => {
+        const code = String(item.codigo || '').toUpperCase();
+        const catalog = byCode.get(code);
+        if (!catalog) {
+            return item;
+        }
+        changed = true;
+        return {
+            ...item,
+            catalogId: catalog.id ?? item.catalogId ?? null,
+            codigo: catalog.codigo,
+            descripcion: catalog.descripcion,
+            unidad: catalog.unidad,
+            precio: Number(catalog.precio || 0),
+        };
+    });
+
+    if (changed) {
+        state.quote = null;
+    }
+}
+
+function renderInsumosRoute() {
+    const root = $('#route-insumos');
+    if (!root) {
+        return;
+    }
+
+    const items = loadInsumoCatalogSafe(true);
+    const active = items.filter(it => it.activo !== false).length;
+    const inactive = items.length - active;
+    const totalCatalog = items.reduce((acc, it) => acc + Number(it.precio || 0), 0);
+
+    root.innerHTML = `
+    <div class="grid" style="gap:14px">
+      <div class="grid cols-3">
+        <div class="card"><div class="card__title">${items.length}</div><div class="card__subtitle">Insumos registrados</div></div>
+        <div class="card"><div class="card__title">${active}</div><div class="card__subtitle">Activos</div></div>
+        <div class="card"><div class="card__title">${formatCurrencyMXN(totalCatalog)}</div><div class="card__subtitle">Suma de precios unitarios</div></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div style="flex:1">
+            <div class="card__title">Gestión de insumos</div>
+            <div class="card__subtitle">Catálogo central para paquetes y cotizaciones</div>
+          </div>
+          <button class="btn btn--primary" id="btnNewInsumo"><i data-lucide="plus"></i>Crear insumo</button>
+          <div class="field" style="max-width:340px">
+            <label>Buscar</label>
+            <input id="insumosSearch" placeholder="Código, descripción, categoría o estatus" value="${escapeAttr(state.insumos.search || '')}" />
+          </div>
+        </div>
+
+        <div class="review-ok" style="margin-top:12px">
+          <b>Relación con paquetes:</b> los paquetes usarán este catálogo como fuente de precio. Si se cambia el precio de un insumo, el catálogo visible para paquetes y nuevas cotizaciones se actualiza de inmediato. Las cotizaciones ya guardadas conservan su información histórica.
+        </div>
+
+        <div style="overflow:auto; margin-top:12px">
+          <table class="table" id="insumosCatalogTable">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Descripción</th>
+                <th>Categoría</th>
+                <th>Unidad</th>
+                <th>Precio</th>
+                <th>IVA</th>
+                <th>Estatus</th>
+                <th>Actualizado</th>
+                <th style="text-align:right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+    $('#insumosSearch')?.addEventListener('input', debounce((e) => {
+        state.insumos.search = e.target.value || '';
+        renderInsumosTable();
+    }, 120));
+
+    $('#btnNewInsumo')?.addEventListener('click', () => openInsumoEditor());
+    renderInsumosTable();
+    window.lucide?.createIcons();
+}
+
+function renderInsumosTable() {
+    const tbody = $('#insumosCatalogTable tbody');
+    if (!tbody) {
+        return;
+    }
+
+    const q = String(state.insumos.search || '').trim().toLowerCase();
+    const items = (state.insumos.items || [])
+            .slice()
+            .sort((a, b) => Number(b.activo !== false) - Number(a.activo !== false) || String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es'))
+            .filter(it => {
+                if (!q) {
+                    return true;
+                }
+                const haystack = [it.codigo, it.descripcion, it.categoria, it.unidad, it.activo === false ? 'inactivo' : 'activo'].join(' ').toLowerCase();
+                return haystack.includes(q);
+            });
+
+    tbody.innerHTML = items.length ? items.map(it => {
+        const ivaPct = Math.round(Number(it.impuestoPct ?? 0.16) * 1000) / 10;
+        return `
+      <tr>
+        <td><b>${escapeHtml(it.codigo || '—')}</b></td>
+        <td>${escapeHtml(it.descripcion || '—')}</td>
+        <td>${escapeHtml(it.categoria || 'General')}</td>
+        <td>${escapeHtml(it.unidad || 'UD')}</td>
+        <td>${formatCurrencyMXN(it.precio || 0)}</td>
+        <td>${ivaPct}%</td>
+        <td><span class="badge ${it.activo === false ? 'badge--warn' : 'badge--success'}">${it.activo === false ? 'Inactivo' : 'Activo'}</span></td>
+        <td>${it.updatedAt ? formatDateTime(it.updatedAt) : '—'}</td>
+        <td>
+          <div class="actions">
+            <button class="btn" data-ins-ver="${escapeAttr(String(it.id))}"><i data-lucide="eye"></i>Ver</button>
+            <button class="btn" data-ins-edit="${escapeAttr(String(it.id))}"><i data-lucide="edit-3"></i>Editar</button>
+            <button class="btn btn--danger" data-ins-del="${escapeAttr(String(it.id))}"><i data-lucide="trash-2"></i>Eliminar</button>
+          </div>
+        </td>
+      </tr>
+    `;
+    }).join('') : `<tr><td colspan="9" style="color:var(--muted)">No se encontraron insumos.</td></tr>`;
+
+    tbody.querySelectorAll('[data-ins-ver]').forEach(btn => {
+        btn.addEventListener('click', () => openInsumoViewer(findInsumoById(btn.dataset.insVer)));
+    });
+    tbody.querySelectorAll('[data-ins-edit]').forEach(btn => {
+        btn.addEventListener('click', () => openInsumoEditor(findInsumoById(btn.dataset.insEdit)));
+    });
+    tbody.querySelectorAll('[data-ins-del]').forEach(btn => {
+        btn.addEventListener('click', () => openInsumoDelete(findInsumoById(btn.dataset.insDel)));
+    });
+
+    window.lucide?.createIcons();
+}
+
+function findInsumoById(id) {
+    return (state.insumos.items || []).find(it => String(it.id) === String(id));
+}
+
+function normalizeInsumoCatalogPayload(raw = {}) {
+    const code = String(raw.codigo || '').trim().toUpperCase();
+    const descripcion = String(raw.descripcion || '').trim();
+    const categoria = String(raw.categoria || 'General').trim() || 'General';
+    const unidad = String(raw.unidad || 'UD').trim().toUpperCase() || 'UD';
+    const precio = Math.max(0, Number(raw.precio || 0));
+    const impuestoInput = Number(raw.impuestoPct ?? 0.16);
+    const impuestoPct = impuestoInput > 1 ? impuestoInput / 100 : impuestoInput;
+    const activo = raw.activo !== false && String(raw.activo || 'true') !== 'false';
+    const observaciones = String(raw.observaciones || '').trim();
+
+    return {codigo: code, descripcion, categoria, unidad, precio, impuestoPct, activo, observaciones};
+}
+
+function readInsumoForm() {
+    return normalizeInsumoCatalogPayload({
+        codigo: $('#insFormCodigo')?.value || '',
+        descripcion: $('#insFormDescripcion')?.value || '',
+        categoria: $('#insFormCategoria')?.value || '',
+        unidad: $('#insFormUnidad')?.value || '',
+        precio: Number($('#insFormPrecio')?.value || 0),
+        impuestoPct: Number($('#insFormIva')?.value || 16) / 100,
+        activo: String($('#insFormActivo')?.value || 'true') === 'true',
+        observaciones: $('#insFormObs')?.value || '',
+    });
+}
+
+function validateInsumoPayload(payload) {
+    if (!payload.codigo) {
+        return 'El código del insumo es obligatorio.';
+    }
+    if (!payload.descripcion) {
+        return 'La descripción del insumo es obligatoria.';
+    }
+    if (!payload.unidad) {
+        return 'La unidad de medida es obligatoria.';
+    }
+    if (!Number.isFinite(Number(payload.precio)) || Number(payload.precio) < 0) {
+        return 'El precio unitario debe ser mayor o igual a cero.';
+    }
+    if (!Number.isFinite(Number(payload.impuestoPct)) || Number(payload.impuestoPct) < 0 || Number(payload.impuestoPct) > 0.30) {
+        return 'El IVA debe estar entre 0% y 30%.';
+    }
+    return '';
+}
+
+function openInsumoViewer(item) {
+    if (!item) {
+        return;
+    }
+    const ivaPct = Math.round(Number(item.impuestoPct ?? 0.16) * 1000) / 10;
+    openModal({
+        title: 'Detalle de insumo',
+        subtitle: item.codigo || '',
+        bodyHtml: `
+      <div class="grid cols-2">
+        <div class="kpi"><div class="kpi__label">Descripción</div><div class="kpi__value" style="font-size:13px">${escapeHtml(item.descripcion || '—')}</div></div>
+        <div class="kpi"><div class="kpi__label">Precio unitario</div><div class="kpi__value">${formatCurrencyMXN(item.precio || 0)}</div></div>
+        <div class="kpi"><div class="kpi__label">Categoría</div><div class="kpi__value" style="font-size:13px">${escapeHtml(item.categoria || 'General')}</div></div>
+        <div class="kpi"><div class="kpi__label">Unidad</div><div class="kpi__value" style="font-size:13px">${escapeHtml(item.unidad || 'UD')}</div></div>
+        <div class="kpi"><div class="kpi__label">IVA</div><div class="kpi__value" style="font-size:13px">${ivaPct}%</div></div>
+        <div class="kpi"><div class="kpi__label">Estatus</div><div class="kpi__value" style="font-size:13px">${item.activo === false ? 'Inactivo' : 'Activo'}</div></div>
+      </div>
+      <div class="card card--flat" style="margin-top:12px; box-shadow:none">
+        <div class="card__subtitle">Observaciones</div>
+        <div class="help">${escapeHtml(item.observaciones || 'Sin observaciones.')}</div>
+      </div>
+    `,
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cerrar</button>
+      <button class="btn btn--primary" id="btnViewerEditInsumo"><i data-lucide="edit-3"></i>Editar</button>
+    `
+    });
+    $('#btnViewerEditInsumo')?.addEventListener('click', () => openInsumoEditor(item));
+}
+
+function openInsumoEditor(item = null) {
+    const isEdit = Boolean(item?.id);
+    const iva = Math.round(Number(item?.impuestoPct ?? 0.16) * 1000) / 10;
+    openModal({
+        title: isEdit ? 'Editar insumo' : 'Nuevo insumo',
+        subtitle: isEdit ? 'Modifica los datos del catálogo' : 'Captura los datos del insumo',
+        bodyHtml: `
+      <div class="grid cols-2">
+        <div class="field">
+          <label>Código *</label>
+          <input id="insFormCodigo" value="${escapeAttr(item?.codigo || '')}" placeholder="Ej. PANEL-550" />
+        </div>
+        <div class="field">
+          <label>Categoría</label>
+          <input id="insFormCategoria" value="${escapeAttr(item?.categoria || 'General')}" placeholder="Ej. Paneles, Inversores, Cableado" />
+        </div>
+        <div class="field" style="grid-column:1 / -1">
+          <label>Descripción *</label>
+          <input id="insFormDescripcion" value="${escapeAttr(item?.descripcion || '')}" placeholder="Nombre o descripción del insumo" />
+        </div>
+        <div class="field">
+          <label>Unidad *</label>
+          <select id="insFormUnidad">
+            ${['UD', 'PZA', 'M', 'W', 'SERV', 'KIT'].map(u => `<option value="${u}" ${u === String(item?.unidad || 'UD').toUpperCase() ? 'selected' : ''}>${u}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Precio unitario *</label>
+          <input id="insFormPrecio" type="number" min="0" step="0.01" value="${escapeAttr(String(item?.precio ?? 0))}" />
+        </div>
+        <div class="field">
+          <label>IVA (%)</label>
+          <input id="insFormIva" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(iva))}" />
+        </div>
+        <div class="field">
+          <label>Estatus</label>
+          <select id="insFormActivo">
+            <option value="true" ${item?.activo === false ? '' : 'selected'}>Activo</option>
+            <option value="false" ${item?.activo === false ? 'selected' : ''}>Inactivo</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column:1 / -1">
+          <label>Observaciones</label>
+          <textarea id="insFormObs" rows="3" placeholder="Notas internas del insumo">${escapeHtml(item?.observaciones || '')}</textarea>
+        </div>
+      </div>
+      <div id="insFormMsg" class="help" style="margin-top:10px"></div>
+    `,
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--primary" id="btnSaveInsumoForm"><i data-lucide="save"></i>${isEdit ? 'Guardar cambios' : 'Guardar insumo'}</button>
+    `
+    });
+
+    $('#btnSaveInsumoForm')?.addEventListener('click', () => {
+        const msg = $('#insFormMsg');
+        const payload = readInsumoForm();
+        const validation = validateInsumoPayload(payload);
+        if (validation) {
+            if (msg) msg.textContent = validation;
+            toast({title: 'Validación', message: validation, icon: 'alert-triangle'});
+            return;
+        }
+
+        try {
+            setPillStatus('Guardando insumo', 'busy');
+            if (isEdit) {
+                updateInsumo(item.id, payload);
+                toast({title: 'Insumo actualizado', message: `${payload.codigo} se actualizó correctamente.`, icon: 'save'});
+            } else {
+                saveInsumo(payload);
+                toast({title: 'Insumo creado', message: `${payload.codigo} se registró correctamente.`, icon: 'check-circle'});
+            }
+            closeModal();
+            loadInsumoCatalogSafe(false);
+            renderInsumosRoute();
+            if (state.route === 'cotizador') {
+                renderCotizadorRoute();
+            }
+            setPillStatus('Listo', 'ok');
+        } catch (e) {
+            console.error(e);
+            const message = e?.message || 'No se pudo guardar el insumo.';
+            if (msg) msg.textContent = message;
+            toast({title: 'Error al guardar', message, icon: 'x-circle'});
+            setPillStatus('Error', 'error');
+        }
+    });
+}
+
+function openInsumoDelete(item) {
+    if (!item) {
+        return;
+    }
+    openModal({
+        title: 'Eliminar insumo',
+        subtitle: item.codigo || '',
+        bodyHtml: `
+      <div class="help">Se eliminará el insumo <b>${escapeHtml(item.descripcion || item.codigo)}</b> del catálogo.</div>
+      <div class="review-ok" style="margin-top:12px">
+        Si posteriormente un paquete utiliza este insumo, el sistema deberá advertirlo y recalcular sus totales. Las cotizaciones ya guardadas no se modificarán.
+      </div>
+    `,
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--danger" id="btnConfirmDeleteInsumo"><i data-lucide="trash-2"></i>Eliminar</button>
+    `
+    });
+
+    $('#btnConfirmDeleteInsumo')?.addEventListener('click', () => {
+        try {
+            setPillStatus('Eliminando insumo', 'busy');
+            removeInsumo(item.id);
+            closeModal();
+            loadInsumoCatalogSafe(false);
+            renderInsumosRoute();
+            toast({title: 'Insumo eliminado', message: `${item.codigo} se retiró del catálogo.`, icon: 'trash-2'});
+            setPillStatus('Listo', 'ok');
+        } catch (e) {
+            console.error(e);
+            toast({title: 'No se pudo eliminar', message: e?.message || 'Intenta de nuevo.', icon: 'x-circle'});
+            setPillStatus('Error', 'error');
+        }
+    });
 }
 
 // ------------------------------

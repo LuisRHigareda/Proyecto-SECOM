@@ -42,6 +42,22 @@ export function removeQuote(id){
   return request('DELETE', `api/quotes/${encodeURIComponent(id)}`);
 }
 
+export function getInsumos(){
+  return request('GET', 'api/insumos');
+}
+
+export function saveInsumo(insumo){
+  return request('POST', 'api/insumos', insumo);
+}
+
+export function updateInsumo(id, patch){
+  return request('PUT', `api/insumos/${encodeURIComponent(id)}`, patch);
+}
+
+export function removeInsumo(id){
+  return request('DELETE', `api/insumos/${encodeURIComponent(id)}`);
+}
+
 export function getProjects(){
   return request('GET', 'api/projects');
 }

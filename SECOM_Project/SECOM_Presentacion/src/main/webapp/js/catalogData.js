@@ -1,6 +1,6 @@
 import { formatCurrencyMXN } from './utils.js';
 
-export const INSUMO_CATALOG = [
+export const DEFAULT_INSUMO_CATALOG = [
   { codigo:'PANEL-550', descripcion:'Panel solar monocristalino 550 W (paneles)', unidad:'PZA', precio: 3200 },
   { codigo:'PANEL-610', descripcion:'Panel solar monocristalino 610 W (paneles premium)', unidad:'PZA', precio: 3950 },
   { codigo:'INV-STR', descripcion:'Inversor interconectado string (inversor)', unidad:'PZA', precio: 18500 },
@@ -17,6 +17,31 @@ export const INSUMO_CATALOG = [
   { codigo:'BAT-LFP', descripcion:'Banco de baterías LiFePO4 de respaldo (baterías)', unidad:'PZA', precio: 48500 },
   { codigo:'ING', descripcion:'Ingeniería, planos y memoria técnica (ingeniería)', unidad:'SERV', precio: 5200 },
 ];
+
+export let INSUMO_CATALOG = DEFAULT_INSUMO_CATALOG.map(normalizeCatalogItem);
+
+export function normalizeCatalogItem(item = {}) {
+  return {
+    id: item.id ?? item.dbId ?? null,
+    codigo: String(item.codigo ?? item.code ?? '').trim().toUpperCase(),
+    descripcion: String(item.descripcion ?? item.nombre ?? item.description ?? '').trim(),
+    categoria: String(item.categoria ?? 'General').trim() || 'General',
+    unidad: String(item.unidad ?? 'UD').trim().toUpperCase() || 'UD',
+    precio: Number(item.precio ?? item.precioUnitario ?? item.precio_unitario ?? 0) || 0,
+    impuestoPct: Number(item.impuestoPct ?? item.impuesto_pct ?? 0.16),
+    activo: item.activo !== false,
+    observaciones: String(item.observaciones ?? '').trim(),
+    usoPaquetes: Number(item.usoPaquetes ?? 0) || 0,
+  };
+}
+
+export function setInsumoCatalog(items = []) {
+  const normalized = Array.isArray(items)
+    ? items.map(normalizeCatalogItem).filter(item => item.codigo && item.descripcion && item.activo !== false)
+    : [];
+  INSUMO_CATALOG = normalized.length ? normalized : DEFAULT_INSUMO_CATALOG.map(normalizeCatalogItem);
+  return INSUMO_CATALOG;
+}
 
 export const PACKAGE_PRESETS = [
   {
@@ -55,11 +80,12 @@ function panelCodeForPackage(packageKey) {
 }
 
 function createItemFromCatalog(code, cantidad = 1, overrides = {}) {
-  const base = INSUMO_CATALOG.find(it => it.codigo === code);
+  const base = INSUMO_CATALOG.find(it => it.codigo === code && it.activo !== false);
   if (!base) {
-    return { codigo: code, descripcion: code, cantidad, unidad: 'SERV', precio: 0 };
+    return { codigo: code, descripcion: code, cantidad, unidad: 'SERV', precio: 0, catalogId: null };
   }
   return {
+    catalogId: base.id ?? null,
     codigo: base.codigo,
     descripcion: overrides.descripcion || base.descripcion,
     cantidad,

@@ -207,6 +207,181 @@ public final class BackendStore {
         }
     }
 
+
+    // =========================================================
+    // INSUMOS
+    // =========================================================
+    public static List<Map<String, Object>> listInsumos() throws Exception {
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            ensureInsumosSchema(conn);
+            seedDefaultInsumos(conn);
+
+            String sql = """
+                SELECT id, codigo, descripcion, categoria, unidad,
+                       precio_unitario, impuesto_pct, activo, observaciones,
+                       created_at, updated_at
+                FROM insumos_catalogo
+                WHERE deleted_at IS NULL
+                ORDER BY activo DESC, descripcion ASC, id ASC
+            """;
+
+            List<Map<String, Object>> out = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(mapInsumoRow(rs));
+                }
+            }
+            return out;
+        } finally {
+            db.close();
+        }
+    }
+
+    public static Map<String, Object> saveInsumo(Map<String, Object> payload) throws Exception {
+        Map<String, Object> insumo = normalizeInsumoPayload(payload);
+
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+
+        try {
+            conn.setAutoCommit(false);
+            ensureInsumosSchema(conn);
+            validateUniqueInsumoCode(conn, asString(insumo.get("codigo")), null);
+
+            String sql = """
+                INSERT INTO insumos_catalogo
+                (codigo, descripcion, categoria, unidad, precio_unitario,
+                 impuesto_pct, activo, observaciones)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+            int id;
+            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, asString(insumo.get("codigo")));
+                ps.setString(2, asString(insumo.get("descripcion")));
+                ps.setString(3, asString(insumo.get("categoria")));
+                ps.setString(4, asString(insumo.get("unidad")));
+                ps.setDouble(5, positive(asDouble(insumo.get("precio"))));
+                ps.setDouble(6, normalizePct(asDouble(insumo.get("impuestoPct")), 0.16));
+                ps.setBoolean(7, asBoolean(insumo.get("activo"), true));
+                ps.setString(8, asString(insumo.get("observaciones")));
+                ps.executeUpdate();
+
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (!rs.next()) {
+                        throw new IllegalStateException("No se pudo generar el ID del insumo.");
+                    }
+                    id = rs.getInt(1);
+                }
+            }
+
+            conn.commit();
+            return getInsumoById(conn, id);
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
+    public static Map<String, Object> updateInsumo(String frontId, Map<String, Object> patch) throws Exception {
+        int id = parsePlainInt(frontId);
+        if (id <= 0) {
+            throw new IllegalArgumentException("ID de insumo inválido.");
+        }
+
+        Map<String, Object> insumo = normalizeInsumoPayload(patch);
+
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+
+        try {
+            conn.setAutoCommit(false);
+            ensureInsumosSchema(conn);
+            if (!existsInsumo(conn, id)) {
+                throw new IllegalStateException("No se encontró el insumo indicado.");
+            }
+            validateUniqueInsumoCode(conn, asString(insumo.get("codigo")), id);
+
+            String sql = """
+                UPDATE insumos_catalogo
+                SET codigo = ?,
+                    descripcion = ?,
+                    categoria = ?,
+                    unidad = ?,
+                    precio_unitario = ?,
+                    impuesto_pct = ?,
+                    activo = ?,
+                    observaciones = ?,
+                    updated_at = NOW()
+                WHERE id = ? AND deleted_at IS NULL
+            """;
+
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, asString(insumo.get("codigo")));
+                ps.setString(2, asString(insumo.get("descripcion")));
+                ps.setString(3, asString(insumo.get("categoria")));
+                ps.setString(4, asString(insumo.get("unidad")));
+                ps.setDouble(5, positive(asDouble(insumo.get("precio"))));
+                ps.setDouble(6, normalizePct(asDouble(insumo.get("impuestoPct")), 0.16));
+                ps.setBoolean(7, asBoolean(insumo.get("activo"), true));
+                ps.setString(8, asString(insumo.get("observaciones")));
+                ps.setInt(9, id);
+                ps.executeUpdate();
+            }
+
+            conn.commit();
+            return getInsumoById(conn, id);
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
+    public static void deleteInsumo(String frontId) throws Exception {
+        int id = parsePlainInt(frontId);
+        if (id <= 0) {
+            throw new IllegalArgumentException("ID de insumo inválido.");
+        }
+
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            ensureInsumosSchema(conn);
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE insumos_catalogo SET deleted_at = NOW(), activo = FALSE, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL")) {
+                ps.setInt(1, id);
+                int rows = ps.executeUpdate();
+                if (rows == 0) {
+                    throw new IllegalStateException("No se encontró el insumo indicado.");
+                }
+            }
+        } finally {
+            db.close();
+        }
+    }
+
     // =========================================================
     // PROJECTS
     // =========================================================
@@ -447,6 +622,181 @@ public final class BackendStore {
             }
             db.close();
         }
+    }
+
+
+    // =========================================================
+    // INTERNALS: INSUMOS
+    // =========================================================
+    private static void ensureInsumosSchema(Connection conn) throws Exception {
+        String sql = """
+            CREATE TABLE IF NOT EXISTS insumos_catalogo (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                codigo VARCHAR(50) NOT NULL,
+                descripcion VARCHAR(255) NOT NULL,
+                categoria VARCHAR(80) NOT NULL DEFAULT 'General',
+                unidad VARCHAR(20) NOT NULL DEFAULT 'UD',
+                precio_unitario DECIMAL(12,2) NOT NULL DEFAULT 0,
+                impuesto_pct DECIMAL(6,4) NOT NULL DEFAULT 0.1600,
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                observaciones TEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                deleted_at TIMESTAMP NULL DEFAULT NULL,
+                INDEX idx_insumos_catalogo_codigo (codigo),
+                INDEX idx_insumos_catalogo_activo (activo),
+                INDEX idx_insumos_catalogo_deleted (deleted_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.executeUpdate();
+        }
+    }
+
+    private static void seedDefaultInsumos(Connection conn) throws Exception {
+        String countSql = "SELECT COUNT(*) FROM insumos_catalogo WHERE deleted_at IS NULL";
+        try (PreparedStatement ps = conn.prepareStatement(countSql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next() && rs.getInt(1) > 0) {
+                return;
+            }
+        }
+
+        insertDefaultInsumo(conn, "PANEL-550", "Panel solar monocristalino 550 W (paneles)", "Paneles", "PZA", 3200, 0.16);
+        insertDefaultInsumo(conn, "PANEL-610", "Panel solar monocristalino 610 W (paneles premium)", "Paneles", "PZA", 3950, 0.16);
+        insertDefaultInsumo(conn, "INV-STR", "Inversor interconectado string (inversor)", "Inversores", "PZA", 18500, 0.16);
+        insertDefaultInsumo(conn, "INV-HIB", "Inversor híbrido con monitoreo (inversor)", "Inversores", "PZA", 36500, 0.16);
+        insertDefaultInsumo(conn, "EST-AL", "Estructura de aluminio para azotea o techo (estructura)", "Estructura", "SERV", 9800, 0.16);
+        insertDefaultInsumo(conn, "EST-LA", "Estructura reforzada para lámina o teja (estructura)", "Estructura", "SERV", 14500, 0.16);
+        insertDefaultInsumo(conn, "CAB-FV", "Cable fotovoltaico y conectores MC4 (cableado)", "Cableado", "SERV", 4200, 0.16);
+        insertDefaultInsumo(conn, "PROT-CC", "Protecciones CC/CA y tablero de interconexión (protecciones)", "Protecciones", "SERV", 7600, 0.16);
+        insertDefaultInsumo(conn, "MON-APP", "Monitoreo remoto y puesta en marcha (monitoreo)", "Monitoreo", "SERV", 3900, 0.16);
+        insertDefaultInsumo(conn, "TIERRA", "Puesta a tierra y canalización (seguridad)", "Seguridad", "SERV", 5600, 0.16);
+        insertDefaultInsumo(conn, "TRAM-CFE", "Trámite de interconexión ante CFE (trámite)", "Trámite", "SERV", 4800, 0.16);
+        insertDefaultInsumo(conn, "MO-INST", "Mano de obra de instalación (instalación)", "Instalación", "SERV", 12600, 0.16);
+        insertDefaultInsumo(conn, "FLETE", "Flete, maniobras y logística (logística)", "Logística", "SERV", 3400, 0.16);
+        insertDefaultInsumo(conn, "BAT-LFP", "Banco de baterías LiFePO4 de respaldo (baterías)", "Baterías", "PZA", 48500, 0.16);
+        insertDefaultInsumo(conn, "ING", "Ingeniería, planos y memoria técnica (ingeniería)", "Ingeniería", "SERV", 5200, 0.16);
+    }
+
+    private static void insertDefaultInsumo(Connection conn, String codigo, String descripcion,
+            String categoria, String unidad, double precio, double impuestoPct) throws Exception {
+        String sql = """
+            INSERT INTO insumos_catalogo
+            (codigo, descripcion, categoria, unidad, precio_unitario, impuesto_pct, activo, observaciones)
+            VALUES (?, ?, ?, ?, ?, ?, TRUE, 'Carga inicial del catálogo SECOM')
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, codigo);
+            ps.setString(2, descripcion);
+            ps.setString(3, categoria);
+            ps.setString(4, unidad);
+            ps.setDouble(5, precio);
+            ps.setDouble(6, impuestoPct);
+            ps.executeUpdate();
+        }
+    }
+
+    private static Map<String, Object> getInsumoById(Connection conn, int id) throws Exception {
+        String sql = """
+            SELECT id, codigo, descripcion, categoria, unidad,
+                   precio_unitario, impuesto_pct, activo, observaciones,
+                   created_at, updated_at
+            FROM insumos_catalogo
+            WHERE id = ? AND deleted_at IS NULL
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapInsumoRow(rs);
+                }
+            }
+        }
+
+        throw new IllegalStateException("No se encontró el insumo solicitado.");
+    }
+
+    private static boolean existsInsumo(Connection conn, int id) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM insumos_catalogo WHERE id = ? AND deleted_at IS NULL")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static void validateUniqueInsumoCode(Connection conn, String codigo, Integer excludeId) throws Exception {
+        String sql = excludeId == null
+                ? "SELECT id FROM insumos_catalogo WHERE codigo = ? AND deleted_at IS NULL LIMIT 1"
+                : "SELECT id FROM insumos_catalogo WHERE codigo = ? AND id <> ? AND deleted_at IS NULL LIMIT 1";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, codigo);
+            if (excludeId != null) {
+                ps.setInt(2, excludeId);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    throw new IllegalArgumentException("El código de insumo ya se encuentra registrado.");
+                }
+            }
+        }
+    }
+
+    private static Map<String, Object> normalizeInsumoPayload(Map<String, Object> payload) {
+        Map<String, Object> in = payload != null ? payload : new LinkedHashMap<>();
+        String codigo = asString(in.get("codigo")).toUpperCase();
+        String descripcion = asString(in.get("descripcion"));
+        String categoria = firstNonBlank(asString(in.get("categoria")), "General");
+        String unidad = firstNonBlank(asString(in.get("unidad")).toUpperCase(), "UD");
+        double precio = positive(asDouble(in.get("precio")));
+        double impuestoPct = normalizePct(asDouble(in.get("impuestoPct")), 0.16);
+        boolean activo = asBoolean(in.get("activo"), true);
+        String observaciones = asString(in.get("observaciones"));
+
+        if (isBlank(codigo)) {
+            throw new IllegalArgumentException("El código del insumo es obligatorio.");
+        }
+        if (isBlank(descripcion)) {
+            throw new IllegalArgumentException("La descripción del insumo es obligatoria.");
+        }
+        if (isBlank(unidad)) {
+            throw new IllegalArgumentException("La unidad de medida es obligatoria.");
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("codigo", codigo);
+        out.put("descripcion", descripcion);
+        out.put("categoria", categoria);
+        out.put("unidad", unidad);
+        out.put("precio", precio);
+        out.put("impuestoPct", impuestoPct);
+        out.put("activo", activo);
+        out.put("observaciones", observaciones);
+        return out;
+    }
+
+    private static Map<String, Object> mapInsumoRow(ResultSet rs) throws Exception {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", rs.getInt("id"));
+        out.put("codigo", asString(rs.getString("codigo")));
+        out.put("descripcion", asString(rs.getString("descripcion")));
+        out.put("categoria", asString(rs.getString("categoria")));
+        out.put("unidad", asString(rs.getString("unidad")));
+        out.put("precio", rs.getDouble("precio_unitario"));
+        out.put("precioUnitario", rs.getDouble("precio_unitario"));
+        out.put("impuestoPct", rs.getDouble("impuesto_pct"));
+        out.put("activo", rs.getBoolean("activo"));
+        out.put("estatus", rs.getBoolean("activo") ? "Activo" : "Inactivo");
+        out.put("observaciones", asString(rs.getString("observaciones")));
+        out.put("usoPaquetes", 0);
+        out.put("createdAt", toMillis(rs.getTimestamp("created_at")));
+        out.put("updatedAt", toMillis(rs.getTimestamp("updated_at")));
+        return out;
     }
 
     // =========================================================
@@ -1243,6 +1593,32 @@ public final class BackendStore {
         return 0.0;
     }
 
+    private static double normalizePct(double value, double fallback) {
+        double pct = value > 1.0 ? value / 100.0 : value;
+        if (pct < 0 || pct > 0.30) {
+            return fallback;
+        }
+        return pct;
+    }
+
+    private static boolean asBoolean(Object value, boolean fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        String s = String.valueOf(value).trim().toLowerCase();
+        if (s.isBlank()) {
+            return fallback;
+        }
+        return switch (s) {
+            case "true", "1", "si", "sí", "activo", "activa" -> true;
+            case "false", "0", "no", "inactivo", "inactiva" -> false;
+            default -> fallback;
+        };
+    }
+
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
@@ -1266,6 +1642,17 @@ public final class BackendStore {
         }
         try {
             return Integer.parseInt(digits);
+        } catch (Exception ex) {
+            return 0;
+        }
+    }
+
+    private static int parsePlainInt(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value.trim());
         } catch (Exception ex) {
             return 0;
         }
