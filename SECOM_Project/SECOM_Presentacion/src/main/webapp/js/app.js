@@ -342,6 +342,9 @@ function setRoute(route) {
     if (route === 'reportes') {
         renderReportesRoute();
     }
+    if (route === 'opciones') {
+        renderOpcionesRoute();
+    }
 }
 
 function startNewQuoteFlow() {
@@ -1116,36 +1119,20 @@ function refreshStep2Summary() {
     $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
     $('#step2Panels') && ($('#step2Panels').textContent = `${formatNumber(q.paneles || 0)} paneles`);
     $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
-    
     const consumoTexto = state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`;
     $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
     $('#tariffImpactData') && ($('#tariffImpactData').innerHTML = getTariffImpact(state.selectedTariff, q).html);
     $('#step2TariffFormula') && ($('#step2TariffFormula').textContent = getTariffImpact(state.selectedTariff, q).formula);
-    
     const comparisonBox = $('#tariffComparisonBox');
     if (comparisonBox)
         comparisonBox.outerHTML = renderTariffComparisonTable(state.selectedTariff);
-    
-
-    let packageText = 'Configuración personalizada';
-    if (state.selectedPackage) {
-        // Buscamos el objeto del paquete para obtener solo el nombre (label)
-        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
-        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
-        
-        if (pkgObj) {
-            packageText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
-        }
-    }
-
-
+    const packageText = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado';
     $('#step2Package') && ($('#step2Package').textContent = packageText);
     $('#packageLabel') && ($('#packageLabel').textContent = packageText);
     $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
     $('#step2Alerts') && ($('#step2Alerts').innerHTML = alerts.length
             ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('')
             : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>');
-    
     const preview = $('#packagePreview');
     if (preview)
         preview.innerHTML = renderPackagePreviewItems();
@@ -1155,9 +1142,7 @@ function applyPackagePreset(packageKey) {
     syncStep2State();
     state.selectedPackage = packageKey;
     const q = state.quote || currentStep2Quote();
-    const manuales = (state.receipt?.insumos || []).filter(it => it.isManual);
-    const insumosPaquete = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
-    state.receipt.insumos = [...insumosPaquete, ...manuales];
+    state.receipt.insumos = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
     state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
     state.quote = currentStep2Quote();
     renderWizard();
@@ -1507,7 +1492,6 @@ function normalizeInsumo(it) {
         cantidad: Math.max(0, n(it?.cantidad ?? 1)),
         unidad: String(it?.unidad ?? 'UD').trim() || 'UD',
         precio: Math.max(0, n(it?.precio ?? 0)),
-        isManual: it?.isManual || false
     };
 }
 
@@ -1609,7 +1593,7 @@ function setupInsumosCrud() {
         const base = INSUMO_CATALOG[idx];
         if (!base)
             return;
-        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio, isManual: true});
+        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio});
         if (sel)
             sel.value = '';
         state.quote = null;
@@ -1618,7 +1602,7 @@ function setupInsumosCrud() {
 
     // Agregar manual
     $('#btnAddManual')?.addEventListener('click', () => {
-        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0, isManual: true});
+        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0});
         state.quote = null;
         renderBody();
     });
@@ -1714,15 +1698,6 @@ function wireStep2() {
         state.selectedPackage = '';
         if (state.receipt?.instalacion)
             state.receipt.instalacion.paqueteSeleccionado = '';
-        
-        //Eliminar paquete de la lista de insumos
-        if (state.receipt?.insumos) {
-            const insumosManuales = state.receipt.insumos.filter(insumo => insumo.isManual);
-            state.receipt.insumos.length = 0; 
-            state.receipt.insumos.push(...insumosManuales);
-        }
-        state.quote = null;
-        
         renderWizard();
         toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
     });
@@ -1759,16 +1734,8 @@ function wireStep2() {
 function renderStep3Left() {
     const q = state.quote || currentStep2Quote();
     state.quote = q;
-    let packageLabel = 'Configuración personalizada';
-    if (state.selectedPackage) {
-        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
-        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
-        
-        if (pkgObj) {
-            packageLabel = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
-        }
-    }
-    
+    const packageLabel = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete';
+
     return `
     <div class="card__title">Resumen técnico y económico</div>
     <div class="help">Esta vista consolida la información corregida del recibo, el sistema propuesto y los montos estimados. Si necesitas cambiar algo, regresa al paso anterior.</div>
@@ -2371,18 +2338,8 @@ function openModalForQuote(q) {
 
     // 1. Extraer el nombre/etiqueta del paquete
     const pkgKey = r.instalacion?.paqueteSeleccionado || '';
-    let pkgText = 'Configuración personalizada';
-    
-    if (pkgKey) {
-        const pkgObj = PACKAGE_PRESETS.find(p => p.key === pkgKey);
-        const numInsumos = Array.isArray(r.insumos) ? r.insumos.length : 0;
-        const inversionActual = q.quote?.inversion || 0;
+    const pkgText = pkgKey ? getPackageSummaryLabel(pkgKey, {quote: q.quote, receipt: r, paneles: q.quote?.paneles, consumoMensual: q.quote?.consumoMensual}) : 'Sin paquete seleccionado';
 
-        if (pkgObj) {
-            pkgText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(inversionActual)}`;
-        }
-    }
-    
     // 2. Construir las filas de la tabla de insumos
     const insumos = Array.isArray(r.insumos) ? r.insumos : [];
     const insumosHtml = insumos.length ? insumos.map(it => `
@@ -2632,14 +2589,24 @@ function loadPackageCatalogSafe(silent = false) {
     try {
         const items = getPaquetes();
         state.paquetes.items = Array.isArray(items) ? items : [];
-        setPackageCatalog(state.paquetes.items);
+        const visibleCatalog = setPackageCatalog(state.paquetes.items);
+
+        // La pantalla de cotización y el CRUD deben alimentarse del mismo catálogo.
+        // Si el backend responde vacío, se usa el catálogo activo cargado en memoria para
+        // evitar que aparezcan paquetes en la cotización pero no en el módulo Paquetes.
+        if (!state.paquetes.items.length && Array.isArray(visibleCatalog) && visibleCatalog.length) {
+            state.paquetes.items = visibleCatalog.map(pkg => ({...pkg, items: Array.isArray(pkg.items) ? pkg.items.map(it => ({...it})) : []}));
+        }
         return state.paquetes.items;
     } catch (e) {
         console.warn('No se pudo cargar el catálogo de paquetes.', e);
         if (!silent) {
             toast({title: 'Paquetes no disponibles', message: e?.message || 'No se pudo consultar la base de datos.', icon: 'alert-triangle'});
         }
-        setPackageCatalog(state.paquetes.items || []);
+        const visibleCatalog = setPackageCatalog(state.paquetes.items || []);
+        if (!state.paquetes.items?.length && Array.isArray(visibleCatalog) && visibleCatalog.length) {
+            state.paquetes.items = visibleCatalog.map(pkg => ({...pkg, items: Array.isArray(pkg.items) ? pkg.items.map(it => ({...it})) : []}));
+        }
         return state.paquetes.items || [];
     }
 }
@@ -2731,6 +2698,7 @@ function renderPaquetesTable() {
     tbody.innerHTML = items.length ? items.map(pkg => {
         const totals = calcPackageTotal(pkg);
         const count = getPackageItems(pkg).length;
+        const rowKey = String(pkg.id ?? pkg.key ?? pkg.clave ?? '');
         return `
       <tr>
         <td><b>${escapeHtml(pkg.nombre || pkg.label || 'Paquete')}</b><div class="help">${escapeHtml(pkg.badge || 'Paquete')}</div></td>
@@ -2742,9 +2710,9 @@ function renderPaquetesTable() {
         <td><span class="badge ${pkg.activo === false ? 'badge--warn' : 'badge--success'}">${pkg.activo === false ? 'Inactivo' : 'Activo'}</span></td>
         <td>
           <div class="actions">
-            <button class="btn" data-paq-ver="${escapeAttr(String(pkg.id))}"><i data-lucide="eye"></i>Ver</button>
-            <button class="btn" data-paq-edit="${escapeAttr(String(pkg.id))}"><i data-lucide="edit-3"></i>Editar</button>
-            <button class="btn btn--danger" data-paq-del="${escapeAttr(String(pkg.id))}"><i data-lucide="trash-2"></i>Eliminar</button>
+            <button class="btn" data-paq-ver="${escapeAttr(rowKey)}"><i data-lucide="eye"></i>Ver</button>
+            <button class="btn" data-paq-edit="${escapeAttr(rowKey)}"><i data-lucide="edit-3"></i>Editar</button>
+            <button class="btn btn--danger" data-paq-del="${escapeAttr(rowKey)}"><i data-lucide="trash-2"></i>Eliminar</button>
           </div>
         </td>
       </tr>
@@ -2765,7 +2733,8 @@ function renderPaquetesTable() {
 }
 
 function findPaqueteById(id) {
-    return (state.paquetes.items || []).find(it => String(it.id) === String(id));
+    const key = String(id ?? '');
+    return (state.paquetes.items || []).find(it => String(it.id ?? '') === key || String(it.key ?? it.clave ?? '') === key);
 }
 
 function getPackageItems(pkg = {}) {
@@ -3048,6 +3017,10 @@ function openPaqueteEditor(pkg = null) {
 
 function openPaqueteDelete(pkg) {
     if (!pkg) {
+        return;
+    }
+    if (!pkg.id) {
+        toast({title: 'Paquete de referencia', message: 'Este paquete todavía no está guardado en la base de datos. Editarlo y guardarlo lo registrará como paquete del catálogo.', icon: 'info'});
         return;
     }
     openModal({
@@ -4237,6 +4210,9 @@ function csvEscape(value) {
 
 function renderOpcionesRoute() {
     const root = $('#route-opciones');
+    if (!root) {
+        return;
+    }
     state.preferences = loadUserPreferences();
     const prefs = state.preferences;
     const theme = prefs.theme || 'dark';
@@ -4252,8 +4228,8 @@ function renderOpcionesRoute() {
           <div class="field" style="max-width:240px">
             <label>Tema</label>
             <select id="themeSelect">
-              <option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dark mode</option>
-              <option value="light" ${theme === 'light' ? 'selected' : ''}>Light mode</option>
+              <option value="dark" ${theme === 'dark' ? 'selected' : ''}>Modo oscuro</option>
+              <option value="light" ${theme === 'light' ? 'selected' : ''}>Modo claro</option>
             </select>
           </div>
         </div>
@@ -4332,7 +4308,7 @@ function renderOpcionesRoute() {
     </div>
   `;
 
-    $('#themeSelect').addEventListener('change', (e) => {
+    $('#themeSelect')?.addEventListener('change', (e) => {
         const t = e.target.value;
         state.preferences.theme = t;
         saveUserPreferences(state.preferences);
@@ -4367,7 +4343,7 @@ function renderOpcionesRoute() {
         toast({title: 'Preferencias guardadas', message: 'Los valores por defecto se actualizaron correctamente.', icon: 'save'});
     });
 
-    $('#btnReset').addEventListener('click', () => {
+    $('#btnReset')?.addEventListener('click', () => {
         openModal({
             title: 'Limpiar datos',
             subtitle: 'Acción irreversible',

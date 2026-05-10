@@ -907,7 +907,9 @@ public final class BackendStore {
     }
 
     private static void seedDefaultInsumos(Connection conn) throws Exception {
-        String countSql = "SELECT COUNT(*) FROM insumos_catalogo";
+        // Considera únicamente insumos visibles para evitar catálogos vacíos
+        // cuando la tabla existe pero todos los registros fueron desactivados por eliminación lógica.
+        String countSql = "SELECT COUNT(*) FROM insumos_catalogo WHERE deleted_at IS NULL";
         try (PreparedStatement ps = conn.prepareStatement(countSql);
              ResultSet rs = ps.executeQuery()) {
             if (rs.next() && rs.getInt(1) > 0) {
@@ -1103,7 +1105,11 @@ public final class BackendStore {
     }
 
     private static void seedDefaultPaquetes(Connection conn) throws Exception {
-        String countSql = "SELECT COUNT(*) FROM paquetes_catalogo";
+        // La carga inicial debe considerar solo paquetes visibles.
+        // Si la tabla existe pero los paquetes fueron marcados como eliminados,
+        // el catálogo quedaba vacío y el cotizador terminaba usando presets locales
+        // que no aparecían en el CRUD de Paquetes.
+        String countSql = "SELECT COUNT(*) FROM paquetes_catalogo WHERE deleted_at IS NULL";
         try (PreparedStatement ps = conn.prepareStatement(countSql);
              ResultSet rs = ps.executeQuery()) {
             if (rs.next() && rs.getInt(1) > 0) {
