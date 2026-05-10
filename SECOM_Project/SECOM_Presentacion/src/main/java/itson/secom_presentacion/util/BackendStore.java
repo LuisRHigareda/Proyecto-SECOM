@@ -11,6 +11,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -160,6 +162,61 @@ public final class BackendStore {
                     throw new IllegalStateException("No se encontró la cotización indicada.");
                 }
             }
+        } finally {
+            db.close();
+        }
+    }
+
+    public static Map<String, Object> buildCotizacionesReport(String fechaInicioRaw, String fechaFinRaw,
+            String statusFilter, String tarifaFilter) throws Exception {
+        LocalDate fechaInicio = parseReportDate(fechaInicioRaw, "fecha inicial");
+        LocalDate fechaFin = parseReportDate(fechaFinRaw, "fecha final");
+        if (fechaInicio.isAfter(fechaFin)) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser mayor que la fecha final.");
+        }
+
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            String sql = """
+                SELECT q.id, q.fecha, q.estado, q.proyecto_generado, q.notas,
+                       q.consumo_promedio_mensual_kwh, q.total,
+                       q.created_at, q.updated_at,
+                       c.nombre_comercial, c.ciudad, c.direccion_fiscal
+                FROM cotizaciones q
+                LEFT JOIN clientes c ON c.id = q.cliente_id
+                WHERE q.deleted_at IS NULL
+                  AND DATE(q.fecha) >= ?
+                  AND DATE(q.fecha) <= ?
+                ORDER BY q.fecha DESC, q.id DESC
+            """;
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setDate(1, java.sql.Date.valueOf(fechaInicio));
+                ps.setDate(2, java.sql.Date.valueOf(fechaFin));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> quoteState = mapQuoteRow(rs);
+                        Map<String, Object> row = mapQuoteReportRow(quoteState, rs.getTimestamp("fecha"), rs.getBoolean("proyecto_generado"));
+                        if (!matchesReportStatus(row, statusFilter) || !matchesReportTariff(row, tarifaFilter)) {
+                            continue;
+                        }
+                        rows.add(row);
+                    }
+                }
+            }
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            Map<String, Object> filters = new LinkedHashMap<>();
+            filters.put("fechaInicio", fechaInicio.toString());
+            filters.put("fechaFin", fechaFin.toString());
+            filters.put("status", isBlank(asString(statusFilter)) ? "todos" : asString(statusFilter));
+            filters.put("tarifa", isBlank(asString(tarifaFilter)) ? "todas" : asString(tarifaFilter));
+            out.put("filters", filters);
+            out.put("summary", buildQuoteReportSummary(rows));
+            out.put("rows", rows);
+            return out;
         } finally {
             db.close();
         }
@@ -1378,6 +1435,120 @@ public final class BackendStore {
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("^-+|-+$", "");
         return isBlank(s) ? "paquete" : s;
+    }
+
+    // =========================================================
+    // INTERNALS: REPORTS
+    // =========================================================
+    private static LocalDate parseReportDate(String raw, String fieldName) {
+        if (isBlank(asString(raw))) {
+            throw new IllegalArgumentException("La " + fieldName + " es obligatoria.");
+        }
+        try {
+            return LocalDate.parse(asString(raw));
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("La " + fieldName + " no tiene un formato válido (AAAA-MM-DD).");
+        }
+    }
+
+    private static Map<String, Object> mapQuoteReportRow(Map<String, Object> state, Timestamp fecha,
+            boolean proyectoGenerado) {
+        Map<String, Object> client = asMap(state.get("client"));
+        Map<String, Object> receipt = asMap(state.get("receipt"));
+        Map<String, Object> quote = asMap(state.get("quote"));
+        Map<String, Object> selectedTariff = asMap(state.get("selectedTariff"));
+        Map<String, Object> tarifaCalculo = asMap(receipt.get("tarifaCalculo"));
+
+        double consumoMensual = firstPositive(
+                asDouble(quote.get("consumoMensual")),
+                asDouble(tarifaCalculo.get("consumoMensualBase")),
+                asDouble(receipt.get("consumoPeriodo"))
+        );
+        double inversion = firstPositive(
+                asDouble(quote.get("totalInsumos")),
+                asDouble(quote.get("inversion")),
+                asDouble(receipt.get("totalAPagar"))
+        );
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("folio", asString(state.get("id")));
+        row.put("id", asString(state.get("id")));
+        row.put("fecha", fecha != null ? fecha.toLocalDateTime().toLocalDate().toString() : "");
+        row.put("fechaTexto", fecha != null ? fecha.toLocalDateTime().toLocalDate().toString() : "");
+        row.put("fechaMillis", toMillis(fecha));
+        row.put("cliente", firstNonBlank(asString(client.get("nombre")), asString(receipt.get("nombre")), "Sin cliente"));
+        row.put("servicio", asString(receipt.get("servicio")));
+        row.put("tarifa", firstNonBlank(
+                asString(selectedTariff.get("label")),
+                asString(receipt.get("tarifaSeleccionada")),
+                asString(receipt.get("tarifa")),
+                "Sin tarifa"));
+        row.put("consumoMensual", consumoMensual);
+        row.put("paneles", positive(asDouble(quote.get("paneles"))));
+        row.put("potenciaKwp", firstPositive(asDouble(quote.get("kwp")), asDouble(quote.get("kwpFinal"))));
+        row.put("inversion", inversion);
+        row.put("ahorroMensual", firstPositive(asDouble(quote.get("ahorroMensual")), asDouble(receipt.get("ahorroEstimado"))));
+        row.put("retornoAnios", positive(asDouble(quote.get("retornoAnios"))));
+        row.put("estatus", firstNonBlank(asString(state.get("status")), "Guardada"));
+        row.put("usuario", firstNonBlank(asString(state.get("usuario")), asString(state.get("createdBy")), "Equipo SECOM"));
+        row.put("proyectoGenerado", proyectoGenerado);
+        row.put("source", state);
+        return row;
+    }
+
+    private static boolean matchesReportStatus(Map<String, Object> row, String statusFilter) {
+        String filter = asString(statusFilter);
+        if (isBlank(filter) || "todos".equalsIgnoreCase(filter)) {
+            return true;
+        }
+        return asString(row.get("estatus")).equalsIgnoreCase(filter);
+    }
+
+    private static boolean matchesReportTariff(Map<String, Object> row, String tarifaFilter) {
+        String filter = asString(tarifaFilter);
+        if (isBlank(filter) || "todas".equalsIgnoreCase(filter)) {
+            return true;
+        }
+        return asString(row.get("tarifa")).equalsIgnoreCase(filter);
+    }
+
+    private static Map<String, Object> buildQuoteReportSummary(List<Map<String, Object>> rows) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        int total = rows.size();
+        int confirmadas = 0;
+        int convertidasProyecto = 0;
+        double montoTotal = 0.0;
+        double consumoTotal = 0.0;
+        double potenciaTotal = 0.0;
+        double ahorroTotal = 0.0;
+        double panelesTotal = 0.0;
+
+        for (Map<String, Object> row : rows) {
+            String status = asString(row.get("estatus")).toLowerCase();
+            if (status.contains("confirm")) {
+                confirmadas++;
+            }
+            if (asBoolean(row.get("proyectoGenerado"), false)) {
+                convertidasProyecto++;
+            }
+            montoTotal += positive(asDouble(row.get("inversion")));
+            consumoTotal += positive(asDouble(row.get("consumoMensual")));
+            potenciaTotal += positive(asDouble(row.get("potenciaKwp")));
+            ahorroTotal += positive(asDouble(row.get("ahorroMensual")));
+            panelesTotal += positive(asDouble(row.get("paneles")));
+        }
+
+        summary.put("totalCotizaciones", total);
+        summary.put("montoTotal", montoTotal);
+        summary.put("promedioInversion", total > 0 ? montoTotal / total : 0.0);
+        summary.put("confirmadas", confirmadas);
+        summary.put("convertidasProyecto", convertidasProyecto);
+        summary.put("pendientes", Math.max(0, total - confirmadas));
+        summary.put("consumoMensualTotal", consumoTotal);
+        summary.put("potenciaTotalKwp", potenciaTotal);
+        summary.put("ahorroMensualTotal", ahorroTotal);
+        summary.put("panelesTotal", panelesTotal);
+        return summary;
     }
 
     // =========================================================

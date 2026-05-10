@@ -1,7 +1,7 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
 import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
-import { getQuotes, getProjects, getInsumos, getPaquetes, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
+import { getQuotes, getProjects, getInsumos, getPaquetes, getCotizacionesReport, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
 import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog, setPackageCatalog } from './catalogData.js';
 import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
@@ -52,6 +52,13 @@ const state = {
     paquetes: {
         items: [],
         search: '',
+    },
+    reportes: {
+        fechaInicio: '',
+        fechaFin: '',
+        status: 'todos',
+        tarifa: 'todas',
+        data: null,
     }
 };
 
@@ -319,6 +326,7 @@ function setRoute(route) {
         proyectos: {t: 'Proyectos', c: 'Proyectos / Gestión'},
         paquetes: {t: 'Paquetes', c: 'Catálogos / Paquetes'},
         insumos: {t: 'Insumos', c: 'Catálogos / Insumos'},
+        reportes: {t: 'Reportes', c: 'Reportes / Cotizaciones'},
         historial: {t: 'Lista de cotizaciones', c: 'Cotizaciones / Lista'},
         opciones: {t: 'Preferencias', c: 'Sistema / Preferencias'},
     };
@@ -330,6 +338,9 @@ function setRoute(route) {
     }
     if (route === 'insumos') {
         renderInsumosRoute();
+    }
+    if (route === 'reportes') {
+        renderReportesRoute();
     }
 }
 
@@ -360,6 +371,7 @@ function renderAllRoutes() {
     renderProyectosRoute();
     renderPaquetesRoute();
     renderInsumosRoute();
+    renderReportesRoute();
     renderOpcionesRoute();
 }
 
@@ -3782,6 +3794,395 @@ function openStatusPicker(p) {
             renderProyectosTable();
         });
     });
+}
+
+
+// ------------------------------
+// Reportes de cotización
+// ------------------------------
+
+function toInputDateLocal(date = new Date()) {
+    const d = new Date(date);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 10);
+}
+
+function firstDayOfCurrentMonthInput() {
+    const now = new Date();
+    return toInputDateLocal(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function ensureReportDefaultDates() {
+    if (!state.reportes.fechaInicio) {
+        state.reportes.fechaInicio = firstDayOfCurrentMonthInput();
+    }
+    if (!state.reportes.fechaFin) {
+        state.reportes.fechaFin = toInputDateLocal();
+    }
+}
+
+function reportStatusOptions(selected = 'todos') {
+    const options = [
+        {value: 'todos', label: 'Todos'},
+        {value: 'Guardada', label: 'Guardadas'},
+        {value: 'Confirmada', label: 'Confirmadas / proyecto'},
+    ];
+    return options.map(o => `<option value="${escapeAttr(o.value)}" ${o.value === selected ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+}
+
+function reportTariffOptions(selected = 'todas') {
+    const tariffs = TARIFFS.filter(t => t.kind !== 'cashvolt');
+    return `
+      <option value="todas" ${selected === 'todas' ? 'selected' : ''}>Todas</option>
+      ${tariffs.map(t => `<option value="${escapeAttr(t.label)}" ${t.label === selected ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
+    `;
+}
+
+function renderReportesRoute() {
+    const root = $('#route-reportes');
+    if (!root) {
+        return;
+    }
+
+    ensureReportDefaultDates();
+    const data = state.reportes.data;
+
+    root.innerHTML = `
+    <div class="grid" style="gap:14px">
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div style="flex:1">
+            <div class="card__title">Generar reporte de cotizaciones</div>
+            <div class="card__subtitle">Consulta cotizaciones por rango de fechas y genera una vista previa exportable.</div>
+          </div>
+        </div>
+
+        <div class="grid cols-4" style="margin-top:14px">
+          <div class="field">
+            <label>Fecha inicial *</label>
+            <input id="repFechaInicio" type="date" value="${escapeAttr(state.reportes.fechaInicio)}" />
+          </div>
+          <div class="field">
+            <label>Fecha final *</label>
+            <input id="repFechaFin" type="date" value="${escapeAttr(state.reportes.fechaFin)}" />
+          </div>
+          <div class="field">
+            <label>Estatus</label>
+            <select id="repStatus">${reportStatusOptions(state.reportes.status)}</select>
+          </div>
+          <div class="field">
+            <label>Tarifa</label>
+            <select id="repTarifa">${reportTariffOptions(state.reportes.tarifa)}</select>
+          </div>
+        </div>
+
+        <div class="wizard-actions" style="justify-content:flex-end; margin-top:12px">
+          <button class="btn" id="btnClearReport"><i data-lucide="rotate-ccw"></i>Limpiar</button>
+          <button class="btn btn--primary" id="btnGenerateReport"><i data-lucide="file-bar-chart"></i>Generar reporte</button>
+        </div>
+
+        <div id="reportValidationMsg" class="help" style="margin-top:8px"></div>
+      </div>
+
+      <div id="reportPreviewWrap">
+        ${data ? renderReportPreview(data) : renderEmptyReportState()}
+      </div>
+    </div>
+  `;
+
+    $('#repFechaInicio')?.addEventListener('change', (e) => state.reportes.fechaInicio = e.target.value || '');
+    $('#repFechaFin')?.addEventListener('change', (e) => state.reportes.fechaFin = e.target.value || '');
+    $('#repStatus')?.addEventListener('change', (e) => state.reportes.status = e.target.value || 'todos');
+    $('#repTarifa')?.addEventListener('change', (e) => state.reportes.tarifa = e.target.value || 'todas');
+    $('#btnGenerateReport')?.addEventListener('click', generateCotizacionesReport);
+    $('#btnClearReport')?.addEventListener('click', () => {
+        state.reportes = {
+            fechaInicio: firstDayOfCurrentMonthInput(),
+            fechaFin: toInputDateLocal(),
+            status: 'todos',
+            tarifa: 'todas',
+            data: null,
+        };
+        renderReportesRoute();
+    });
+
+    bindReportPreviewActions();
+    window.lucide?.createIcons();
+}
+
+function renderEmptyReportState() {
+    return `
+    <div class="card">
+      <div class="empty">
+        <div class="empty__icon"><i data-lucide="bar-chart-3"></i></div>
+        <div class="card__title">Sin reporte generado</div>
+        <div class="help">Selecciona fecha inicial y fecha final para consultar las cotizaciones registradas en ese periodo.</div>
+      </div>
+    </div>
+  `;
+}
+
+function validateReportFilters(filters) {
+    if (!filters.fechaInicio || !filters.fechaFin) {
+        return 'La fecha inicial y la fecha final son obligatorias.';
+    }
+    if (filters.fechaInicio > filters.fechaFin) {
+        return 'La fecha inicial no puede ser mayor que la fecha final.';
+    }
+    return '';
+}
+
+function currentReportFiltersFromForm() {
+    return {
+        fechaInicio: $('#repFechaInicio')?.value || state.reportes.fechaInicio || '',
+        fechaFin: $('#repFechaFin')?.value || state.reportes.fechaFin || '',
+        status: $('#repStatus')?.value || state.reportes.status || 'todos',
+        tarifa: $('#repTarifa')?.value || state.reportes.tarifa || 'todas',
+    };
+}
+
+function generateCotizacionesReport() {
+    const msg = $('#reportValidationMsg');
+    const filters = currentReportFiltersFromForm();
+    const validation = validateReportFilters(filters);
+    if (validation) {
+        if (msg) msg.textContent = validation;
+        toast({title: 'Validación', message: validation, icon: 'alert-triangle'});
+        return;
+    }
+
+    try {
+        setPillStatus('Generando reporte', 'busy');
+        const data = getCotizacionesReport(filters);
+        state.reportes = {...state.reportes, ...filters, data};
+        if (msg) msg.textContent = '';
+        renderReportesRoute();
+        const count = Number(data?.summary?.totalCotizaciones || 0);
+        toast({title: 'Reporte generado', message: `${formatNumber(count)} cotización(es) encontradas.`, icon: 'file-check'});
+        setPillStatus('Listo', 'ok');
+    } catch (e) {
+        console.error(e);
+        const message = e?.message || 'No se pudo generar el reporte.';
+        if (msg) msg.textContent = message;
+        toast({title: 'Error al generar reporte', message, icon: 'x-circle'});
+        setPillStatus('Error', 'error');
+    }
+}
+
+function renderReportPreview(data = {}) {
+    const summary = data.summary || {};
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const filters = data.filters || state.reportes;
+    const hasRows = rows.length > 0;
+
+    return `
+    <div class="card" id="reportPreview">
+      <div class="row" style="align-items:center; margin-bottom:12px">
+        <div style="flex:1">
+          <div class="card__title">Reporte de cotizaciones</div>
+          <div class="card__subtitle">Periodo: ${escapeHtml(filters.fechaInicio || '—')} al ${escapeHtml(filters.fechaFin || '—')} · Estatus: ${escapeHtml(filters.status && filters.status !== 'todos' ? filters.status : 'Todos')} · Tarifa: ${escapeHtml(filters.tarifa && filters.tarifa !== 'todas' ? filters.tarifa : 'Todas')}</div>
+        </div>
+        <div class="actions no-print">
+          <button class="btn" id="btnReportPdf" ${hasRows ? '' : 'disabled'}><i data-lucide="download"></i>Descargar PDF</button>
+          <button class="btn" id="btnReportCsv" ${hasRows ? '' : 'disabled'}><i data-lucide="sheet"></i>Exportar Excel</button>
+        </div>
+      </div>
+
+      ${hasRows ? `
+        <div class="grid cols-4">
+          <div class="kpi"><div class="kpi__label">Cotizaciones</div><div class="kpi__value">${formatNumber(summary.totalCotizaciones || 0)}</div></div>
+          <div class="kpi"><div class="kpi__label">Monto total cotizado</div><div class="kpi__value">${formatCurrencyMXN(summary.montoTotal || 0)}</div></div>
+          <div class="kpi"><div class="kpi__label">Promedio de inversión</div><div class="kpi__value">${formatCurrencyMXN(summary.promedioInversion || 0)}</div></div>
+          <div class="kpi"><div class="kpi__label">Cotizaciones confirmadas</div><div class="kpi__value">${formatNumber(summary.confirmadas || 0)}</div></div>
+        </div>
+
+        <div class="grid cols-4" style="margin-top:12px">
+          <div class="kpi"><div class="kpi__label">Convertidas en proyecto</div><div class="kpi__value">${formatNumber(summary.convertidasProyecto || 0)}</div></div>
+          <div class="kpi"><div class="kpi__label">Pendientes / guardadas</div><div class="kpi__value">${formatNumber(summary.pendientes || 0)}</div></div>
+          <div class="kpi"><div class="kpi__label">Potencia total</div><div class="kpi__value">${Number(summary.potenciaTotalKwp || 0).toFixed(2)} kWp</div></div>
+          <div class="kpi"><div class="kpi__label">Ahorro mensual estimado</div><div class="kpi__value">${formatCurrencyMXN(summary.ahorroMensualTotal || 0)}</div></div>
+        </div>
+
+        <div style="overflow:auto; margin-top:14px">
+          <table class="table" id="reportQuotesTable">
+            <thead>
+              <tr>
+                <th>Folio</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Tarifa</th>
+                <th>Consumo</th>
+                <th>Paneles</th>
+                <th>Potencia</th>
+                <th>Inversión</th>
+                <th>Ahorro</th>
+                <th>Retorno</th>
+                <th>Estatus</th>
+                <th style="text-align:right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row, idx) => renderReportRow(row, idx)).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="empty">
+          <div class="empty__icon"><i data-lucide="search-x"></i></div>
+          <div class="card__title">No se encontraron cotizaciones</div>
+          <div class="help">Modifica el rango de fechas o los filtros para generar nuevamente el reporte.</div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderReportRow(row = {}, idx = 0) {
+    const status = String(row.estatus || 'Guardada');
+    const badge = status.toLowerCase().includes('confirm') ? 'badge--success' : 'badge--warn';
+    return `
+    <tr>
+      <td>${escapeHtml(row.folio || row.id || '—')}</td>
+      <td>${escapeHtml(row.fechaTexto || row.fecha || '—')}</td>
+      <td>${escapeHtml(row.cliente || '—')}</td>
+      <td>${escapeHtml(row.tarifa || '—')}</td>
+      <td>${formatNumber(row.consumoMensual || 0)} kWh</td>
+      <td>${formatNumber(row.paneles || 0)}</td>
+      <td>${Number(row.potenciaKwp || 0).toFixed(2)} kWp</td>
+      <td>${formatCurrencyMXN(row.inversion || 0)}</td>
+      <td>${formatCurrencyMXN(row.ahorroMensual || 0)}</td>
+      <td>${Number(row.retornoAnios || 0).toFixed(1)} años</td>
+      <td><span class="badge ${badge}">${escapeHtml(status)}</span></td>
+      <td><div class="actions"><button class="btn" data-report-detail="${idx}"><i data-lucide="eye"></i>Ver</button></div></td>
+    </tr>
+  `;
+}
+
+function bindReportPreviewActions() {
+    $('#btnReportPdf')?.addEventListener('click', exportReportPdf);
+    $('#btnReportCsv')?.addEventListener('click', exportReportCsv);
+    $$('#reportQuotesTable [data-report-detail]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.reportDetail || -1);
+            const row = state.reportes.data?.rows?.[idx];
+            if (row) {
+                openReportQuoteDetail(row);
+            }
+        });
+    });
+}
+
+function openReportQuoteDetail(row = {}) {
+    openModal({
+        title: row.folio || 'Cotización',
+        subtitle: `${row.fechaTexto || row.fecha || 'Sin fecha'} · ${row.estatus || 'Guardada'}`,
+        bodyHtml: `
+      <div class="grid cols-2">
+        <div class="kpi"><div class="kpi__label">Cliente</div><div class="kpi__value" style="font-size:13px">${escapeHtml(row.cliente || '—')}</div></div>
+        <div class="kpi"><div class="kpi__label">Tarifa</div><div class="kpi__value" style="font-size:13px">${escapeHtml(row.tarifa || '—')}</div></div>
+        <div class="kpi"><div class="kpi__label">Consumo mensual usado</div><div class="kpi__value">${formatNumber(row.consumoMensual || 0)} kWh</div></div>
+        <div class="kpi"><div class="kpi__label">Paneles</div><div class="kpi__value">${formatNumber(row.paneles || 0)}</div></div>
+        <div class="kpi"><div class="kpi__label">Potencia estimada</div><div class="kpi__value">${Number(row.potenciaKwp || 0).toFixed(2)} kWp</div></div>
+        <div class="kpi"><div class="kpi__label">Inversión</div><div class="kpi__value">${formatCurrencyMXN(row.inversion || 0)}</div></div>
+        <div class="kpi"><div class="kpi__label">Ahorro mensual</div><div class="kpi__value">${formatCurrencyMXN(row.ahorroMensual || 0)}</div></div>
+        <div class="kpi"><div class="kpi__label">Retorno estimado</div><div class="kpi__value">${Number(row.retornoAnios || 0).toFixed(1)} años</div></div>
+      </div>
+      <div class="card card--flat" style="margin-top:12px; box-shadow:none">
+        <div class="card__subtitle">Datos adicionales</div>
+        <div class="review-row"><span>No. de servicio</span><b>${escapeHtml(row.servicio || '—')}</b></div>
+        <div class="review-row"><span>Usuario que generó</span><b>${escapeHtml(row.usuario || 'Equipo SECOM')}</b></div>
+        <div class="review-row"><span>Convertida en proyecto</span><b>${row.proyectoGenerado ? 'Sí' : 'No'}</b></div>
+      </div>
+    `,
+        footHtml: `<button class="btn" data-close="true"><i data-lucide="x"></i>Cerrar</button>`
+    });
+}
+
+async function exportReportPdf() {
+    if (!window.jspdf || !window.html2canvas) {
+        toast({title: 'Exportación no disponible', message: 'Falta jsPDF o html2canvas en el navegador.', icon: 'alert-triangle'});
+        return;
+    }
+
+    const area = $('#reportPreview');
+    if (!area || !state.reportes.data?.rows?.length) {
+        toast({title: 'Sin datos', message: 'Genera primero un reporte con cotizaciones.', icon: 'alert-triangle'});
+        return;
+    }
+
+    try {
+        setPillStatus('Generando PDF…', 'busy');
+        const canvas = await window.html2canvas(area, {scale: 2, useCORS: true, backgroundColor: '#ffffff', ignoreElements: el => el.classList?.contains('no-print')});
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const {jsPDF} = window.jspdf;
+        const pdf = new jsPDF({orientation: 'l', unit: 'pt', format: 'a4'});
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        const margin = 24;
+        const imgW = pageW - margin * 2;
+        const imgH = canvas.height * (imgW / canvas.width);
+        let heightLeft = imgH;
+        let position = margin;
+
+        pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+        heightLeft -= (pageH - margin * 2);
+        while (heightLeft > 0) {
+            pdf.addPage();
+            position = margin - (imgH - heightLeft);
+            pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+            heightLeft -= (pageH - margin * 2);
+        }
+
+        const f = state.reportes;
+        pdf.save(`Reporte_Cotizaciones_SECOM_${f.fechaInicio}_a_${f.fechaFin}.pdf`);
+        toast({title: 'PDF generado', message: 'Descarga iniciada.', icon: 'download'});
+        setPillStatus('Listo', 'ok');
+    } catch (e) {
+        console.error(e);
+        toast({title: 'No se pudo exportar', message: e?.message || 'Intenta de nuevo.', icon: 'x-circle'});
+        setPillStatus('Error', 'error');
+    }
+}
+
+function exportReportCsv() {
+    const rows = state.reportes.data?.rows || [];
+    if (!rows.length) {
+        toast({title: 'Sin datos', message: 'Genera primero un reporte con cotizaciones.', icon: 'alert-triangle'});
+        return;
+    }
+
+    const headers = ['Folio', 'Fecha', 'Cliente', 'Tarifa', 'Consumo mensual kWh', 'Paneles', 'Potencia kWp', 'Inversión MXN', 'Ahorro mensual MXN', 'Retorno años', 'Estatus', 'Usuario'];
+    const lines = [headers, ...rows.map(r => [
+        r.folio || r.id || '',
+        r.fechaTexto || r.fecha || '',
+        r.cliente || '',
+        r.tarifa || '',
+        Number(r.consumoMensual || 0),
+        Number(r.paneles || 0),
+        Number(r.potenciaKwp || 0),
+        Number(r.inversion || 0),
+        Number(r.ahorroMensual || 0),
+        Number(r.retornoAnios || 0),
+        r.estatus || '',
+        r.usuario || 'Equipo SECOM',
+    ])].map(cols => cols.map(csvEscape).join(',')).join('\n');
+
+    const blob = new Blob(['\ufeff' + lines], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const f = state.reportes;
+    a.href = url;
+    a.download = `Reporte_Cotizaciones_SECOM_${f.fechaInicio}_a_${f.fechaFin}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({title: 'Reporte exportado', message: 'Archivo compatible con Excel generado.', icon: 'sheet'});
+}
+
+function csvEscape(value) {
+    const text = String(value ?? '');
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 // ------------------------------

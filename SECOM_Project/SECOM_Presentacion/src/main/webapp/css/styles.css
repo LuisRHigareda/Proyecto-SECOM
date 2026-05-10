@@ -314,6 +314,9 @@ button, input, select, textarea{
 .grid.cols-3{
     grid-template-columns: repeat(3, 1fr);
 }
+.grid.cols-4{
+    grid-template-columns: repeat(4, 1fr);
+}
 
 .card{
     border: 1px solid var(--border);
@@ -551,6 +554,28 @@ button, input, select, textarea{
 .preview__empty{
     color: var(--muted);
     font-size:12px;
+}
+
+.empty{
+    min-height: 180px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 8px;
+    text-align:center;
+    color: var(--muted);
+}
+.empty__icon{
+    width: 44px;
+    height: 44px;
+    border-radius: 16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid var(--border);
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
 }
 
 .preview canvas,
@@ -1122,7 +1147,9 @@ button, input, select, textarea{
     display:none;
 }
 @media (max-width: 980px){
-    .grid.cols-2{
+    .grid.cols-2,
+    .grid.cols-3,
+    .grid.cols-4{
         grid-template-columns: 1fr;
     }
     .kpis{

@@ -97,3 +97,12 @@ export function removeProject(id){
 export function resetAllData(){
   return request('POST', 'api/debug/reset', {});
 }
+export function getCotizacionesReport(filters = {}){
+  const params = new URLSearchParams();
+  if (filters.fechaInicio) params.set('fechaInicio', filters.fechaInicio);
+  if (filters.fechaFin) params.set('fechaFin', filters.fechaFin);
+  if (filters.status && filters.status !== 'todos') params.set('status', filters.status);
+  if (filters.tarifa && filters.tarifa !== 'todas') params.set('tarifa', filters.tarifa);
+  const qs = params.toString();
+  return request('GET', `api/reports/quotes${qs ? `?${qs}` : ''}`);
+}
