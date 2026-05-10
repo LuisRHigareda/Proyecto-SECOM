@@ -1116,20 +1116,36 @@ function refreshStep2Summary() {
     $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
     $('#step2Panels') && ($('#step2Panels').textContent = `${formatNumber(q.paneles || 0)} paneles`);
     $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
+    
     const consumoTexto = state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`;
     $('#step2ConsumoMensual') && ($('#step2ConsumoMensual').textContent = consumoTexto);
     $('#tariffImpactData') && ($('#tariffImpactData').innerHTML = getTariffImpact(state.selectedTariff, q).html);
     $('#step2TariffFormula') && ($('#step2TariffFormula').textContent = getTariffImpact(state.selectedTariff, q).formula);
+    
     const comparisonBox = $('#tariffComparisonBox');
     if (comparisonBox)
         comparisonBox.outerHTML = renderTariffComparisonTable(state.selectedTariff);
-    const packageText = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado';
+    
+
+    let packageText = 'Configuración personalizada';
+    if (state.selectedPackage) {
+        // Buscamos el objeto del paquete para obtener solo el nombre (label)
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
+        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
+        
+        if (pkgObj) {
+            packageText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
+        }
+    }
+
+
     $('#step2Package') && ($('#step2Package').textContent = packageText);
     $('#packageLabel') && ($('#packageLabel').textContent = packageText);
     $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
     $('#step2Alerts') && ($('#step2Alerts').innerHTML = alerts.length
             ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('')
             : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>');
+    
     const preview = $('#packagePreview');
     if (preview)
         preview.innerHTML = renderPackagePreviewItems();
@@ -1139,7 +1155,9 @@ function applyPackagePreset(packageKey) {
     syncStep2State();
     state.selectedPackage = packageKey;
     const q = state.quote || currentStep2Quote();
-    state.receipt.insumos = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
+    const manuales = (state.receipt?.insumos || []).filter(it => it.isManual);
+    const insumosPaquete = buildPackageItems(packageKey, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual});
+    state.receipt.insumos = [...insumosPaquete, ...manuales];
     state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
     state.quote = currentStep2Quote();
     renderWizard();
@@ -1489,6 +1507,7 @@ function normalizeInsumo(it) {
         cantidad: Math.max(0, n(it?.cantidad ?? 1)),
         unidad: String(it?.unidad ?? 'UD').trim() || 'UD',
         precio: Math.max(0, n(it?.precio ?? 0)),
+        isManual: it?.isManual || false
     };
 }
 
@@ -1590,7 +1609,7 @@ function setupInsumosCrud() {
         const base = INSUMO_CATALOG[idx];
         if (!base)
             return;
-        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio});
+        r.insumos.push({codigo: base.codigo, descripcion: base.descripcion, cantidad: 1, unidad: base.unidad, precio: base.precio, isManual: true});
         if (sel)
             sel.value = '';
         state.quote = null;
@@ -1599,7 +1618,7 @@ function setupInsumosCrud() {
 
     // Agregar manual
     $('#btnAddManual')?.addEventListener('click', () => {
-        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0});
+        r.insumos.push({codigo: '', descripcion: '', cantidad: 1, unidad: 'UD', precio: 0, isManual: true});
         state.quote = null;
         renderBody();
     });
@@ -1695,6 +1714,15 @@ function wireStep2() {
         state.selectedPackage = '';
         if (state.receipt?.instalacion)
             state.receipt.instalacion.paqueteSeleccionado = '';
+        
+        //Eliminar paquete de la lista de insumos
+        if (state.receipt?.insumos) {
+            const insumosManuales = state.receipt.insumos.filter(insumo => insumo.isManual);
+            state.receipt.insumos.length = 0; 
+            state.receipt.insumos.push(...insumosManuales);
+        }
+        state.quote = null;
+        
         renderWizard();
         toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
     });
@@ -1731,8 +1759,16 @@ function wireStep2() {
 function renderStep3Left() {
     const q = state.quote || currentStep2Quote();
     state.quote = q;
-    const packageLabel = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete';
-
+    let packageLabel = 'Configuración personalizada';
+    if (state.selectedPackage) {
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === state.selectedPackage);
+        const numInsumos = Array.isArray(state.receipt?.insumos) ? state.receipt.insumos.length : 0;
+        
+        if (pkgObj) {
+            packageLabel = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(q.inversion)}`;
+        }
+    }
+    
     return `
     <div class="card__title">Resumen técnico y económico</div>
     <div class="help">Esta vista consolida la información corregida del recibo, el sistema propuesto y los montos estimados. Si necesitas cambiar algo, regresa al paso anterior.</div>
@@ -2335,8 +2371,18 @@ function openModalForQuote(q) {
 
     // 1. Extraer el nombre/etiqueta del paquete
     const pkgKey = r.instalacion?.paqueteSeleccionado || '';
-    const pkgText = pkgKey ? getPackageSummaryLabel(pkgKey, {quote: q.quote, receipt: r, paneles: q.quote?.paneles, consumoMensual: q.quote?.consumoMensual}) : 'Sin paquete seleccionado';
+    let pkgText = 'Configuración personalizada';
+    
+    if (pkgKey) {
+        const pkgObj = PACKAGE_PRESETS.find(p => p.key === pkgKey);
+        const numInsumos = Array.isArray(r.insumos) ? r.insumos.length : 0;
+        const inversionActual = q.quote?.inversion || 0;
 
+        if (pkgObj) {
+            pkgText = `${pkgObj.label} · ${numInsumos} insumos · ${formatCurrencyMXN(inversionActual)}`;
+        }
+    }
+    
     // 2. Construir las filas de la tabla de insumos
     const insumos = Array.isArray(r.insumos) ? r.insumos : [];
     const insumosHtml = insumos.length ? insumos.map(it => `
