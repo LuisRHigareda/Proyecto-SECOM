@@ -1,8 +1,8 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
 import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
-import { getQuotes, getProjects, getInsumos, resetAllData, saveInsumo, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updateProject, updateQuote, removeInsumo, removeProject } from './storage.js';
-import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog } from './catalogData.js';
+import { getQuotes, getProjects, getInsumos, getPaquetes, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
+import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog, setPackageCatalog } from './catalogData.js';
 import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
 const state = {
@@ -46,6 +46,10 @@ const state = {
         status: 'Listo',
     },
     insumos: {
+        items: [],
+        search: '',
+    },
+    paquetes: {
         items: [],
         search: '',
     }
@@ -251,6 +255,7 @@ function init() {
     state.preferences = loadUserPreferences();
     applyTheme(state.preferences.theme || 'dark');
     loadInsumoCatalogSafe(true);
+    loadPackageCatalogSafe(true);
 
     // Icons
     if (window.lucide)
@@ -312,6 +317,7 @@ function setRoute(route) {
         cotizador: {t: 'Crear cotización', c: 'Cotizaciones / Crear'},
         cashvolt: {t: 'CashVolt', c: 'CashVolt / Carga'},
         proyectos: {t: 'Proyectos', c: 'Proyectos / Gestión'},
+        paquetes: {t: 'Paquetes', c: 'Catálogos / Paquetes'},
         insumos: {t: 'Insumos', c: 'Catálogos / Insumos'},
         historial: {t: 'Lista de cotizaciones', c: 'Cotizaciones / Lista'},
         opciones: {t: 'Preferencias', c: 'Sistema / Preferencias'},
@@ -319,6 +325,9 @@ function setRoute(route) {
     $('#pageTitle').textContent = titleMap[route]?.t || 'SECOM';
     $('#pageCrumb').textContent = titleMap[route]?.c || '';
 
+    if (route === 'paquetes') {
+        renderPaquetesRoute();
+    }
     if (route === 'insumos') {
         renderInsumosRoute();
     }
@@ -349,6 +358,7 @@ function renderAllRoutes() {
     renderCashvoltRoute();
     renderHistorialRoute();
     renderProyectosRoute();
+    renderPaquetesRoute();
     renderInsumosRoute();
     renderOpcionesRoute();
 }
@@ -2555,6 +2565,468 @@ async function exportPdfFromStoredQuote(q) {
 }
 
 
+
+// ------------------------------
+// Paquetes (Catálogo global)
+// ------------------------------
+
+function loadPackageCatalogSafe(silent = false) {
+    try {
+        const items = getPaquetes();
+        state.paquetes.items = Array.isArray(items) ? items : [];
+        setPackageCatalog(state.paquetes.items);
+        return state.paquetes.items;
+    } catch (e) {
+        console.warn('No se pudo cargar el catálogo de paquetes.', e);
+        if (!silent) {
+            toast({title: 'Paquetes no disponibles', message: e?.message || 'No se pudo consultar la base de datos.', icon: 'alert-triangle'});
+        }
+        setPackageCatalog(state.paquetes.items || []);
+        return state.paquetes.items || [];
+    }
+}
+
+function renderPaquetesRoute() {
+    const root = $('#route-paquetes');
+    if (!root) {
+        return;
+    }
+
+    loadInsumoCatalogSafe(true);
+    const items = loadPackageCatalogSafe(true);
+    const active = items.filter(it => it.activo !== false).length;
+    const total = items.reduce((acc, pkg) => acc + calcPackageTotal(pkg).total, 0);
+    const avg = items.length ? total / items.length : 0;
+
+    root.innerHTML = `
+    <div class="grid" style="gap:14px">
+      <div class="grid cols-3">
+        <div class="card"><div class="card__title">${items.length}</div><div class="card__subtitle">Paquetes registrados</div></div>
+        <div class="card"><div class="card__title">${active}</div><div class="card__subtitle">Activos</div></div>
+        <div class="card"><div class="card__title">${formatCurrencyMXN(avg)}</div><div class="card__subtitle">Promedio por paquete</div></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div style="flex:1">
+            <div class="card__title">Gestión de paquetes</div>
+            <div class="card__subtitle">Administra paquete básico, intermedio, avanzado y nuevos paquetes comerciales</div>
+          </div>
+          <button class="btn btn--primary" id="btnNewPaquete"><i data-lucide="plus"></i>Crear paquete</button>
+          <div class="field" style="max-width:340px">
+            <label>Buscar</label>
+            <input id="paquetesSearch" placeholder="Nombre, descripción o estatus" value="${escapeAttr(state.paquetes.search || '')}" />
+          </div>
+        </div>
+
+        <div class="review-ok" style="margin-top:12px">
+          <b>Relación con insumos:</b> los paquetes toman el precio vigente del catálogo de insumos. Si un insumo cambia de precio o se elimina, el total del paquete se recalcula al consultar o editar el paquete. Las cotizaciones ya guardadas conservan su histórico.
+        </div>
+
+        <div style="overflow:auto; margin-top:12px">
+          <table class="table" id="paquetesCatalogTable">
+            <thead>
+              <tr>
+                <th>Paquete</th>
+                <th>Descripción</th>
+                <th>Insumos</th>
+                <th>Subtotal</th>
+                <th>IVA</th>
+                <th>Total</th>
+                <th>Estatus</th>
+                <th style="text-align:right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+    $('#paquetesSearch')?.addEventListener('input', debounce((e) => {
+        state.paquetes.search = e.target.value || '';
+        renderPaquetesTable();
+    }, 120));
+
+    $('#btnNewPaquete')?.addEventListener('click', () => openPaqueteEditor());
+    renderPaquetesTable();
+    window.lucide?.createIcons();
+}
+
+function renderPaquetesTable() {
+    const tbody = $('#paquetesCatalogTable tbody');
+    if (!tbody) {
+        return;
+    }
+
+    const q = String(state.paquetes.search || '').trim().toLowerCase();
+    const items = (state.paquetes.items || [])
+            .slice()
+            .sort((a, b) => Number(b.activo !== false) - Number(a.activo !== false) || String(a.nombre || a.label || '').localeCompare(String(b.nombre || b.label || ''), 'es'))
+            .filter(pkg => {
+                if (!q) return true;
+                const haystack = [pkg.nombre, pkg.label, pkg.descripcion, pkg.description, pkg.badge, pkg.activo === false ? 'inactivo' : 'activo'].join(' ').toLowerCase();
+                return haystack.includes(q);
+            });
+
+    tbody.innerHTML = items.length ? items.map(pkg => {
+        const totals = calcPackageTotal(pkg);
+        const count = getPackageItems(pkg).length;
+        return `
+      <tr>
+        <td><b>${escapeHtml(pkg.nombre || pkg.label || 'Paquete')}</b><div class="help">${escapeHtml(pkg.badge || 'Paquete')}</div></td>
+        <td>${escapeHtml(pkg.descripcion || pkg.description || '—')}</td>
+        <td>${count}</td>
+        <td>${formatCurrencyMXN(totals.subtotal)}</td>
+        <td>${formatCurrencyMXN(totals.impuestos)}</td>
+        <td><b>${formatCurrencyMXN(totals.total)}</b></td>
+        <td><span class="badge ${pkg.activo === false ? 'badge--warn' : 'badge--success'}">${pkg.activo === false ? 'Inactivo' : 'Activo'}</span></td>
+        <td>
+          <div class="actions">
+            <button class="btn" data-paq-ver="${escapeAttr(String(pkg.id))}"><i data-lucide="eye"></i>Ver</button>
+            <button class="btn" data-paq-edit="${escapeAttr(String(pkg.id))}"><i data-lucide="edit-3"></i>Editar</button>
+            <button class="btn btn--danger" data-paq-del="${escapeAttr(String(pkg.id))}"><i data-lucide="trash-2"></i>Eliminar</button>
+          </div>
+        </td>
+      </tr>
+    `;
+    }).join('') : `<tr><td colspan="8" style="color:var(--muted)">No se encontraron paquetes.</td></tr>`;
+
+    tbody.querySelectorAll('[data-paq-ver]').forEach(btn => {
+        btn.addEventListener('click', () => openPaqueteViewer(findPaqueteById(btn.dataset.paqVer)));
+    });
+    tbody.querySelectorAll('[data-paq-edit]').forEach(btn => {
+        btn.addEventListener('click', () => openPaqueteEditor(findPaqueteById(btn.dataset.paqEdit)));
+    });
+    tbody.querySelectorAll('[data-paq-del]').forEach(btn => {
+        btn.addEventListener('click', () => openPaqueteDelete(findPaqueteById(btn.dataset.paqDel)));
+    });
+
+    window.lucide?.createIcons();
+}
+
+function findPaqueteById(id) {
+    return (state.paquetes.items || []).find(it => String(it.id) === String(id));
+}
+
+function getPackageItems(pkg = {}) {
+    return Array.isArray(pkg.items) ? pkg.items : (Array.isArray(pkg.insumos) ? pkg.insumos : []);
+}
+
+function findCatalogForPackageItem(item = {}) {
+    const id = item.insumoId ?? item.catalogId ?? item.insumo_id ?? null;
+    const code = String(item.codigo || '').toUpperCase();
+    return INSUMO_CATALOG.find(it => (id != null && String(it.id) === String(id)) || (code && it.codigo === code));
+}
+
+function normalizePackageItemWithCatalog(item = {}) {
+    const cat = findCatalogForPackageItem(item);
+    const cantidad = Math.max(0.01, Number(item.cantidad || 1));
+    return {
+        id: item.id ?? null,
+        insumoId: cat?.id ?? item.insumoId ?? item.catalogId ?? null,
+        catalogId: cat?.id ?? item.catalogId ?? item.insumoId ?? null,
+        codigo: cat?.codigo ?? String(item.codigo || '').toUpperCase(),
+        descripcion: cat?.descripcion ?? item.descripcion ?? 'Insumo no disponible',
+        unidad: cat?.unidad ?? item.unidad ?? 'UD',
+        precio: Number(cat?.precio ?? item.precio ?? 0),
+        impuestoPct: Number(cat?.impuestoPct ?? item.impuestoPct ?? 0.16),
+        cantidad,
+        activo: cat ? cat.activo !== false : item.activo !== false,
+    };
+}
+
+function calcPackageTotal(pkg = {}) {
+    const items = getPackageItems(pkg).map(normalizePackageItemWithCatalog).filter(it => it.activo !== false);
+    const subtotal = items.reduce((acc, it) => acc + (Number(it.cantidad || 0) * Number(it.precio || 0)), 0);
+    const impuestos = items.reduce((acc, it) => acc + (Number(it.cantidad || 0) * Number(it.precio || 0) * Number(it.impuestoPct ?? 0.16)), 0);
+    return {subtotal, impuestos, total: subtotal + impuestos};
+}
+
+function openPaqueteViewer(pkg) {
+    if (!pkg) {
+        return;
+    }
+
+    const items = getPackageItems(pkg).map(normalizePackageItemWithCatalog);
+    const totals = calcPackageTotal(pkg);
+    openModal({
+        title: 'Detalle de paquete',
+        subtitle: pkg.nombre || pkg.label || 'Paquete',
+        bodyHtml: `
+      <div class="grid cols-3">
+        <div class="kpi"><div class="kpi__label">Insumos</div><div class="kpi__value">${items.length}</div></div>
+        <div class="kpi"><div class="kpi__label">Subtotal</div><div class="kpi__value">${formatCurrencyMXN(totals.subtotal)}</div></div>
+        <div class="kpi"><div class="kpi__label">Total</div><div class="kpi__value">${formatCurrencyMXN(totals.total)}</div></div>
+      </div>
+      <div class="card card--flat" style="margin-top:12px; box-shadow:none">
+        <div class="card__subtitle">Descripción</div>
+        <div class="help">${escapeHtml(pkg.descripcion || pkg.description || 'Sin descripción.')}</div>
+      </div>
+      <div style="overflow:auto; margin-top:12px">
+        <table class="table">
+          <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Unidad</th><th>Precio</th><th>Total</th></tr></thead>
+          <tbody>
+            ${items.length ? items.map(it => `
+              <tr>
+                <td><b>${escapeHtml(it.codigo || '—')}</b></td>
+                <td>${escapeHtml(it.descripcion || '—')}</td>
+                <td>${formatNumber(it.cantidad || 0)}</td>
+                <td>${escapeHtml(it.unidad || 'UD')}</td>
+                <td>${formatCurrencyMXN(it.precio || 0)}</td>
+                <td>${formatCurrencyMXN(Number(it.cantidad || 0) * Number(it.precio || 0))}</td>
+              </tr>
+            `).join('') : '<tr><td colspan="6" style="color:var(--muted)">Sin insumos asociados.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `,
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cerrar</button>
+      <button class="btn btn--primary" id="btnViewerEditPaquete"><i data-lucide="edit-3"></i>Editar</button>
+    `
+    });
+    $('#btnViewerEditPaquete')?.addEventListener('click', () => openPaqueteEditor(pkg));
+}
+
+function normalizePaquetePayload(raw = {}) {
+    const nombre = String(raw.nombre || raw.label || '').trim();
+    const descripcion = String(raw.descripcion || raw.description || '').trim();
+    const badge = String(raw.badge || 'Paquete').trim() || 'Paquete';
+    const activo = raw.activo !== false && String(raw.activo || 'true') !== 'false';
+    const observaciones = String(raw.observaciones || '').trim();
+    const items = Array.isArray(raw.items || raw.insumos) ? (raw.items || raw.insumos).map(normalizePackageItemWithCatalog).filter(it => it.insumoId || it.codigo) : [];
+    return {nombre, label: nombre, descripcion, description: descripcion, badge, activo, observaciones, items};
+}
+
+function validatePaquetePayload(payload) {
+    if (!payload.nombre) {
+        return 'El nombre del paquete es obligatorio.';
+    }
+    if (!payload.items.length) {
+        return 'El paquete debe tener al menos un insumo asociado.';
+    }
+    const invalid = payload.items.find(it => !Number.isFinite(Number(it.cantidad)) || Number(it.cantidad) <= 0);
+    if (invalid) {
+        return 'Todas las cantidades deben ser mayores a cero.';
+    }
+    return '';
+}
+
+function openPaqueteEditor(pkg = null) {
+    const isEdit = Boolean(pkg?.id);
+    let draftItems = getPackageItems(pkg || {}).map(normalizePackageItemWithCatalog);
+
+    const renderEditorBody = () => {
+        const totals = calcPackageTotal({items: draftItems});
+        return `
+      <div class="grid cols-2">
+        <div class="field">
+          <label>Nombre del paquete *</label>
+          <input id="paqFormNombre" value="${escapeAttr(pkg?.nombre || pkg?.label || '')}" placeholder="Ej. Paquete residencial estándar" />
+        </div>
+        <div class="field">
+          <label>Etiqueta</label>
+          <input id="paqFormBadge" value="${escapeAttr(pkg?.badge || 'Paquete')}" placeholder="Ej. Básico, Balanceado, Premium" />
+        </div>
+        <div class="field" style="grid-column:1 / -1">
+          <label>Descripción</label>
+          <input id="paqFormDescripcion" value="${escapeAttr(pkg?.descripcion || pkg?.description || '')}" placeholder="Descripción comercial del paquete" />
+        </div>
+        <div class="field">
+          <label>Estatus</label>
+          <select id="paqFormActivo">
+            <option value="true" ${pkg?.activo === false ? '' : 'selected'}>Activo</option>
+            <option value="false" ${pkg?.activo === false ? 'selected' : ''}>Inactivo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Observaciones</label>
+          <input id="paqFormObs" value="${escapeAttr(pkg?.observaciones || '')}" placeholder="Notas internas" />
+        </div>
+      </div>
+
+      <div class="card card--flat" style="margin-top:12px; box-shadow:none">
+        <div class="row" style="align-items:end">
+          <div class="field" style="flex:1">
+            <label>Agregar insumo</label>
+            <select id="paqAddInsumo">
+              <option value="">Selecciona un insumo activo</option>
+              ${INSUMO_CATALOG.map(it => `<option value="${escapeAttr(String(it.id ?? it.codigo))}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio || 0)}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn" id="btnPaqAddInsumo" type="button"><i data-lucide="plus"></i>Agregar</button>
+        </div>
+        <div style="overflow:auto; margin-top:12px">
+          <table class="table" id="paqDraftTable">
+            <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Unidad</th><th>Precio vigente</th><th>Total</th><th></th></tr></thead>
+            <tbody>
+              ${draftItems.length ? draftItems.map((it, idx) => `
+                <tr>
+                  <td><b>${escapeHtml(it.codigo || '—')}</b></td>
+                  <td>${escapeHtml(it.descripcion || '—')}</td>
+                  <td><input data-paq-qty="${idx}" type="number" min="0.01" step="0.01" value="${escapeAttr(String(it.cantidad || 1))}" style="width:92px" /></td>
+                  <td>${escapeHtml(it.unidad || 'UD')}</td>
+                  <td>${formatCurrencyMXN(it.precio || 0)}</td>
+                  <td>${formatCurrencyMXN(Number(it.cantidad || 0) * Number(it.precio || 0))}</td>
+                  <td><button class="btn btn--danger" data-paq-remove="${idx}" type="button"><i data-lucide="trash-2"></i></button></td>
+                </tr>
+              `).join('') : '<tr><td colspan="7" style="color:var(--muted)">Agrega al menos un insumo para guardar el paquete.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        <div class="quote-totals" style="margin-top:12px">
+          <div><span>Subtotal</span><b>${formatCurrencyMXN(totals.subtotal)}</b></div>
+          <div><span>IVA</span><b>${formatCurrencyMXN(totals.impuestos)}</b></div>
+          <div><span>Total</span><b>${formatCurrencyMXN(totals.total)}</b></div>
+        </div>
+      </div>
+      <div id="paqFormMsg" class="help" style="margin-top:10px"></div>
+    `;
+    };
+
+    const bindEditorEvents = () => {
+        $('#btnPaqAddInsumo')?.addEventListener('click', () => {
+            const selected = $('#paqAddInsumo')?.value || '';
+            if (!selected) {
+                toast({title: 'Selecciona un insumo', message: 'Debe elegirse un insumo del catálogo.', icon: 'alert-triangle'});
+                return;
+            }
+            const catalog = INSUMO_CATALOG.find(it => String(it.id ?? it.codigo) === String(selected));
+            if (!catalog) {
+                return;
+            }
+            const exists = draftItems.find(it => String(it.insumoId ?? it.codigo) === String(catalog.id ?? catalog.codigo));
+            if (exists) {
+                exists.cantidad = Number(exists.cantidad || 1) + 1;
+            } else {
+                draftItems.push(normalizePackageItemWithCatalog({insumoId: catalog.id, codigo: catalog.codigo, cantidad: 1}));
+            }
+            refreshEditor();
+        });
+        $$('#paqDraftTable [data-paq-qty]').forEach(input => {
+            input.addEventListener('input', debounce((e) => {
+                const idx = Number(e.target.dataset.paqQty);
+                if (!draftItems[idx]) return;
+                draftItems[idx].cantidad = Math.max(0.01, Number(e.target.value || 0));
+                refreshEditor();
+            }, 180));
+        });
+        $$('#paqDraftTable [data-paq-remove]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                draftItems.splice(Number(btn.dataset.paqRemove), 1);
+                refreshEditor();
+            });
+        });
+        window.lucide?.createIcons();
+    };
+
+    const readPayload = () => normalizePaquetePayload({
+        nombre: $('#paqFormNombre')?.value || '',
+        descripcion: $('#paqFormDescripcion')?.value || '',
+        badge: $('#paqFormBadge')?.value || '',
+        activo: String($('#paqFormActivo')?.value || 'true') === 'true',
+        observaciones: $('#paqFormObs')?.value || '',
+        items: draftItems,
+    });
+
+    const refreshEditor = () => {
+        const panel = $('#modalBody');
+        if (!panel) return;
+        const previous = readPayload();
+        pkg = {...(pkg || {}), ...previous};
+        draftItems = draftItems.map(normalizePackageItemWithCatalog);
+        panel.innerHTML = renderEditorBody();
+        bindEditorEvents();
+    };
+
+    openModal({
+        title: isEdit ? 'Editar paquete' : 'Nuevo paquete',
+        subtitle: isEdit ? 'Modifica datos e insumos del paquete' : 'Captura los datos del paquete',
+        bodyHtml: renderEditorBody(),
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--primary" id="btnSavePaqueteForm"><i data-lucide="save"></i>${isEdit ? 'Guardar cambios' : 'Guardar paquete'}</button>
+    `
+    });
+
+    bindEditorEvents();
+    $('#btnSavePaqueteForm')?.addEventListener('click', () => {
+        const msg = $('#paqFormMsg');
+        const payload = readPayload();
+        const validation = validatePaquetePayload(payload);
+        if (validation) {
+            if (msg) msg.textContent = validation;
+            toast({title: 'Validación', message: validation, icon: 'alert-triangle'});
+            return;
+        }
+
+        try {
+            setPillStatus('Guardando paquete', 'busy');
+            if (isEdit) {
+                updatePaquete(pkg.id, payload);
+                toast({title: 'Paquete actualizado', message: `${payload.nombre} se actualizó correctamente.`, icon: 'save'});
+            } else {
+                savePaquete(payload);
+                toast({title: 'Paquete creado', message: `${payload.nombre} se registró correctamente.`, icon: 'check-circle'});
+            }
+            closeModal();
+            loadPackageCatalogSafe(false);
+            renderPaquetesRoute();
+            if (state.route === 'cotizador') {
+                renderCotizadorRoute();
+            }
+            setPillStatus('Listo', 'ok');
+        } catch (e) {
+            console.error(e);
+            const message = e?.message || 'No se pudo guardar el paquete.';
+            if (msg) msg.textContent = message;
+            toast({title: 'Error al guardar', message, icon: 'x-circle'});
+            setPillStatus('Error', 'error');
+        }
+    });
+}
+
+function openPaqueteDelete(pkg) {
+    if (!pkg) {
+        return;
+    }
+    openModal({
+        title: 'Eliminar paquete',
+        subtitle: pkg.nombre || pkg.label || '',
+        bodyHtml: `
+      <div class="help">Se eliminará el paquete <b>${escapeHtml(pkg.nombre || pkg.label || 'Paquete')}</b> del catálogo visible.</div>
+      <div class="review-ok" style="margin-top:12px">
+        Si el paquete ya fue utilizado en cotizaciones, el sistema conservará el historial de esas cotizaciones y solo retirará el paquete de nuevas operaciones.
+      </div>
+    `,
+        footHtml: `
+      <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
+      <button class="btn btn--danger" id="btnConfirmDeletePaquete"><i data-lucide="trash-2"></i>Eliminar</button>
+    `
+    });
+
+    $('#btnConfirmDeletePaquete')?.addEventListener('click', () => {
+        try {
+            setPillStatus('Eliminando paquete', 'busy');
+            removePaquete(pkg.id);
+            closeModal();
+            loadPackageCatalogSafe(false);
+            renderPaquetesRoute();
+            if (state.route === 'cotizador') {
+                renderCotizadorRoute();
+            }
+            toast({title: 'Paquete eliminado', message: `${pkg.nombre || pkg.label || 'Paquete'} se retiró del catálogo.`, icon: 'trash-2'});
+            setPillStatus('Listo', 'ok');
+        } catch (e) {
+            console.error(e);
+            toast({title: 'No se pudo eliminar', message: e?.message || 'Intenta de nuevo.', icon: 'x-circle'});
+            setPillStatus('Error', 'error');
+        }
+    });
+}
+
 // ------------------------------
 // Insumos (Catálogo global)
 // ------------------------------
@@ -2886,7 +3358,11 @@ function openInsumoEditor(item = null) {
             }
             closeModal();
             loadInsumoCatalogSafe(false);
+            loadPackageCatalogSafe(false);
             renderInsumosRoute();
+            if (state.route === 'paquetes') {
+                renderPaquetesRoute();
+            }
             if (state.route === 'cotizador') {
                 renderCotizadorRoute();
             }
@@ -2926,7 +3402,14 @@ function openInsumoDelete(item) {
             removeInsumo(item.id);
             closeModal();
             loadInsumoCatalogSafe(false);
+            loadPackageCatalogSafe(false);
             renderInsumosRoute();
+            if (state.route === 'paquetes') {
+                renderPaquetesRoute();
+            }
+            if (state.route === 'cotizador') {
+                renderCotizadorRoute();
+            }
             toast({title: 'Insumo eliminado', message: `${item.codigo} se retiró del catálogo.`, icon: 'trash-2'});
             setPillStatus('Listo', 'ok');
         } catch (e) {

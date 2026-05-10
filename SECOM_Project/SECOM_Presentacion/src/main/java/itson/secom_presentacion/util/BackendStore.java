@@ -368,6 +368,13 @@ public final class BackendStore {
         try {
             Connection conn = db.getConexion();
             ensureInsumosSchema(conn);
+            ensurePaquetesSchema(conn);
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE paquete_insumos SET deleted_at = NOW(), updated_at = NOW() WHERE insumo_id = ? AND deleted_at IS NULL")) {
+                ps.setInt(1, id);
+                ps.executeUpdate();
+            }
 
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE insumos_catalogo SET deleted_at = NOW(), activo = FALSE, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL")) {
@@ -378,6 +385,194 @@ public final class BackendStore {
                 }
             }
         } finally {
+            db.close();
+        }
+    }
+
+
+    // =========================================================
+    // PAQUETES
+    // =========================================================
+    public static List<Map<String, Object>> listPaquetes() throws Exception {
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            ensureInsumosSchema(conn);
+            seedDefaultInsumos(conn);
+            ensurePaquetesSchema(conn);
+            seedDefaultPaquetes(conn);
+
+            String sql = """
+                SELECT id, clave, nombre, descripcion, badge, activo, observaciones,
+                       created_at, updated_at
+                FROM paquetes_catalogo
+                WHERE deleted_at IS NULL
+                ORDER BY activo DESC, nombre ASC, id ASC
+            """;
+
+            List<Map<String, Object>> out = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(mapPaqueteRow(conn, rs));
+                }
+            }
+            return out;
+        } finally {
+            db.close();
+        }
+    }
+
+    public static Map<String, Object> savePaquete(Map<String, Object> payload) throws Exception {
+        Map<String, Object> paquete = normalizePaquetePayload(payload);
+
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+
+        try {
+            conn.setAutoCommit(false);
+            ensureInsumosSchema(conn);
+            seedDefaultInsumos(conn);
+            ensurePaquetesSchema(conn);
+
+            String sql = """
+                INSERT INTO paquetes_catalogo
+                (clave, nombre, descripcion, badge, activo, observaciones)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """;
+
+            int id;
+            try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, generatePackageKey(conn, asString(paquete.get("nombre")), null));
+                ps.setString(2, asString(paquete.get("nombre")));
+                ps.setString(3, asString(paquete.get("descripcion")));
+                ps.setString(4, asString(paquete.get("badge")));
+                ps.setBoolean(5, asBoolean(paquete.get("activo"), true));
+                ps.setString(6, asString(paquete.get("observaciones")));
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (!rs.next()) {
+                        throw new IllegalStateException("No se pudo generar el ID del paquete.");
+                    }
+                    id = rs.getInt(1);
+                }
+            }
+
+            replacePaqueteInsumos(conn, id, asListOfMaps(paquete.get("items")));
+            conn.commit();
+            return getPaqueteById(conn, id);
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
+    public static Map<String, Object> updatePaquete(String frontId, Map<String, Object> patch) throws Exception {
+        int id = parsePlainInt(frontId);
+        if (id <= 0) {
+            throw new IllegalArgumentException("ID de paquete inválido.");
+        }
+
+        Map<String, Object> paquete = normalizePaquetePayload(patch);
+
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+
+        try {
+            conn.setAutoCommit(false);
+            ensureInsumosSchema(conn);
+            seedDefaultInsumos(conn);
+            ensurePaquetesSchema(conn);
+            if (!existsPaquete(conn, id)) {
+                throw new IllegalStateException("No se encontró el paquete indicado.");
+            }
+
+            String sql = """
+                UPDATE paquetes_catalogo
+                SET clave = ?,
+                    nombre = ?,
+                    descripcion = ?,
+                    badge = ?,
+                    activo = ?,
+                    observaciones = ?,
+                    updated_at = NOW()
+                WHERE id = ? AND deleted_at IS NULL
+            """;
+
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, generatePackageKey(conn, asString(paquete.get("nombre")), id));
+                ps.setString(2, asString(paquete.get("nombre")));
+                ps.setString(3, asString(paquete.get("descripcion")));
+                ps.setString(4, asString(paquete.get("badge")));
+                ps.setBoolean(5, asBoolean(paquete.get("activo"), true));
+                ps.setString(6, asString(paquete.get("observaciones")));
+                ps.setInt(7, id);
+                ps.executeUpdate();
+            }
+
+            replacePaqueteInsumos(conn, id, asListOfMaps(paquete.get("items")));
+            conn.commit();
+            return getPaqueteById(conn, id);
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
+    public static void deletePaquete(String frontId) throws Exception {
+        int id = parsePlainInt(frontId);
+        if (id <= 0) {
+            throw new IllegalArgumentException("ID de paquete inválido.");
+        }
+
+        ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
+        try {
+            conn.setAutoCommit(false);
+            ensurePaquetesSchema(conn);
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE paquete_insumos SET deleted_at = NOW(), updated_at = NOW() WHERE paquete_id = ? AND deleted_at IS NULL")) {
+                ps.setInt(1, id);
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE paquetes_catalogo SET deleted_at = NOW(), activo = FALSE, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL")) {
+                ps.setInt(1, id);
+                int rows = ps.executeUpdate();
+                if (rows == 0) {
+                    throw new IllegalStateException("No se encontró el paquete indicado.");
+                }
+            }
+            conn.commit();
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
             db.close();
         }
     }
@@ -655,7 +850,7 @@ public final class BackendStore {
     }
 
     private static void seedDefaultInsumos(Connection conn) throws Exception {
-        String countSql = "SELECT COUNT(*) FROM insumos_catalogo WHERE deleted_at IS NULL";
+        String countSql = "SELECT COUNT(*) FROM insumos_catalogo";
         try (PreparedStatement ps = conn.prepareStatement(countSql);
              ResultSet rs = ps.executeQuery()) {
             if (rs.next() && rs.getInt(1) > 0) {
@@ -797,6 +992,392 @@ public final class BackendStore {
         out.put("createdAt", toMillis(rs.getTimestamp("created_at")));
         out.put("updatedAt", toMillis(rs.getTimestamp("updated_at")));
         return out;
+    }
+
+
+    // =========================================================
+    // INTERNALS: PAQUETES
+    // =========================================================
+    private static void ensurePaquetesSchema(Connection conn) throws Exception {
+        String paquetesSql = """
+            CREATE TABLE IF NOT EXISTS paquetes_catalogo (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                clave VARCHAR(120) NOT NULL,
+                nombre VARCHAR(160) NOT NULL,
+                descripcion TEXT NULL,
+                badge VARCHAR(80) NOT NULL DEFAULT 'Paquete',
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                observaciones TEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                deleted_at TIMESTAMP NULL DEFAULT NULL,
+                INDEX idx_paquetes_catalogo_clave (clave),
+                INDEX idx_paquetes_catalogo_activo (activo),
+                INDEX idx_paquetes_catalogo_deleted (deleted_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """;
+
+        String insumosSql = """
+            CREATE TABLE IF NOT EXISTS paquete_insumos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                paquete_id INT NOT NULL,
+                insumo_id INT NULL,
+                codigo_snapshot VARCHAR(80) NOT NULL,
+                descripcion_snapshot VARCHAR(255) NOT NULL,
+                unidad_snapshot VARCHAR(20) NOT NULL DEFAULT 'UD',
+                cantidad DECIMAL(12,4) NOT NULL DEFAULT 1,
+                precio_snapshot DECIMAL(14,2) NOT NULL DEFAULT 0,
+                impuesto_snapshot DECIMAL(6,4) NOT NULL DEFAULT 0.1600,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                deleted_at TIMESTAMP NULL DEFAULT NULL,
+                INDEX idx_paquete_insumos_paquete (paquete_id),
+                INDEX idx_paquete_insumos_insumo (insumo_id),
+                INDEX idx_paquete_insumos_deleted (deleted_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(paquetesSql)) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = conn.prepareStatement(insumosSql)) {
+            ps.executeUpdate();
+        }
+    }
+
+    private static void seedDefaultPaquetes(Connection conn) throws Exception {
+        String countSql = "SELECT COUNT(*) FROM paquetes_catalogo";
+        try (PreparedStatement ps = conn.prepareStatement(countSql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next() && rs.getInt(1) > 0) {
+                return;
+            }
+        }
+
+        int basico = insertDefaultPaquete(conn, "basico", "Paquete básico",
+                "Interconexión esencial con componentes estándar y costo contenido.",
+                "Recomendado para arranque");
+        addDefaultPackageItem(conn, basico, "PANEL-550", 1);
+        addDefaultPackageItem(conn, basico, "INV-STR", 1);
+        addDefaultPackageItem(conn, basico, "EST-AL", 1);
+        addDefaultPackageItem(conn, basico, "CAB-FV", 1);
+        addDefaultPackageItem(conn, basico, "PROT-CC", 1);
+        addDefaultPackageItem(conn, basico, "MO-INST", 1);
+        addDefaultPackageItem(conn, basico, "TRAM-CFE", 1);
+
+        int intermedio = insertDefaultPaquete(conn, "intermedio", "Paquete intermedio",
+                "Mejor balance entre rendimiento, protecciones y monitoreo.",
+                "Balanceado");
+        addDefaultPackageItem(conn, intermedio, "PANEL-550", 1);
+        addDefaultPackageItem(conn, intermedio, "INV-STR", 1);
+        addDefaultPackageItem(conn, intermedio, "EST-LA", 1);
+        addDefaultPackageItem(conn, intermedio, "CAB-FV", 1);
+        addDefaultPackageItem(conn, intermedio, "PROT-CC", 1);
+        addDefaultPackageItem(conn, intermedio, "MON-APP", 1);
+        addDefaultPackageItem(conn, intermedio, "TIERRA", 1);
+        addDefaultPackageItem(conn, intermedio, "MO-INST", 1);
+        addDefaultPackageItem(conn, intermedio, "TRAM-CFE", 1);
+        addDefaultPackageItem(conn, intermedio, "FLETE", 1);
+
+        int avanzado = insertDefaultPaquete(conn, "avanzado", "Paquete avanzado",
+                "Componentes premium, monitoreo extendido y preparación para respaldo.",
+                "Premium");
+        addDefaultPackageItem(conn, avanzado, "PANEL-610", 1);
+        addDefaultPackageItem(conn, avanzado, "INV-HIB", 1);
+        addDefaultPackageItem(conn, avanzado, "EST-LA", 1);
+        addDefaultPackageItem(conn, avanzado, "CAB-FV", 1);
+        addDefaultPackageItem(conn, avanzado, "PROT-CC", 1);
+        addDefaultPackageItem(conn, avanzado, "MON-APP", 1);
+        addDefaultPackageItem(conn, avanzado, "TIERRA", 1);
+        addDefaultPackageItem(conn, avanzado, "ING", 1);
+        addDefaultPackageItem(conn, avanzado, "MO-INST", 1);
+        addDefaultPackageItem(conn, avanzado, "TRAM-CFE", 1);
+        addDefaultPackageItem(conn, avanzado, "FLETE", 1);
+    }
+
+    private static int insertDefaultPaquete(Connection conn, String clave, String nombre, String descripcion, String badge) throws Exception {
+        String sql = """
+            INSERT INTO paquetes_catalogo
+            (clave, nombre, descripcion, badge, activo, observaciones)
+            VALUES (?, ?, ?, ?, TRUE, 'Carga inicial del catálogo SECOM')
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, clave);
+            ps.setString(2, nombre);
+            ps.setString(3, descripcion);
+            ps.setString(4, badge);
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        }
+        throw new IllegalStateException("No se pudo crear el paquete predeterminado.");
+    }
+
+    private static void addDefaultPackageItem(Connection conn, int paqueteId, String codigo, double cantidad) throws Exception {
+        Map<String, Object> insumo = getInsumoByCodigo(conn, codigo);
+        if (insumo == null) {
+            return;
+        }
+        insertPaqueteInsumo(conn, paqueteId, asMap(insumo), cantidad);
+    }
+
+    private static Map<String, Object> getInsumoByCodigo(Connection conn, String codigo) throws Exception {
+        String sql = """
+            SELECT id, codigo, descripcion, categoria, unidad,
+                   precio_unitario, impuesto_pct, activo, observaciones,
+                   created_at, updated_at
+            FROM insumos_catalogo
+            WHERE codigo = ? AND deleted_at IS NULL
+            LIMIT 1
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, asString(codigo).toUpperCase());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapInsumoRow(rs);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, Object> getInsumoRef(Connection conn, Map<String, Object> item) throws Exception {
+        int id = parsePlainInt(firstNonBlank(asString(item.get("insumoId")), asString(item.get("catalogId")), asString(item.get("insumo_id"))));
+        if (id > 0) {
+            try {
+                return getInsumoById(conn, id);
+            } catch (Exception ignore) {
+            }
+        }
+        String codigo = asString(item.get("codigo")).toUpperCase();
+        if (!isBlank(codigo)) {
+            Map<String, Object> byCode = getInsumoByCodigo(conn, codigo);
+            if (byCode != null) {
+                return byCode;
+            }
+        }
+        throw new IllegalArgumentException("Cada insumo del paquete debe existir en el catálogo de insumos.");
+    }
+
+    private static Map<String, Object> getPaqueteById(Connection conn, int id) throws Exception {
+        String sql = """
+            SELECT id, clave, nombre, descripcion, badge, activo, observaciones,
+                   created_at, updated_at
+            FROM paquetes_catalogo
+            WHERE id = ? AND deleted_at IS NULL
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapPaqueteRow(conn, rs);
+                }
+            }
+        }
+        throw new IllegalStateException("No se encontró el paquete solicitado.");
+    }
+
+    private static boolean existsPaquete(Connection conn, int id) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM paquetes_catalogo WHERE id = ? AND deleted_at IS NULL")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static Map<String, Object> normalizePaquetePayload(Map<String, Object> payload) {
+        Map<String, Object> in = payload != null ? payload : new LinkedHashMap<>();
+        String nombre = firstNonBlank(asString(in.get("nombre")), asString(in.get("label")));
+        String descripcion = firstNonBlank(asString(in.get("descripcion")), asString(in.get("description")));
+        String badge = firstNonBlank(asString(in.get("badge")), "Paquete");
+        boolean activo = asBoolean(in.get("activo"), true);
+        String observaciones = asString(in.get("observaciones"));
+        List<Map<String, Object>> items = asListOfMaps(firstNonNull(in.get("items"), in.get("insumos")));
+
+        if (isBlank(nombre)) {
+            throw new IllegalArgumentException("El nombre del paquete es obligatorio.");
+        }
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("El paquete debe tener al menos un insumo asociado.");
+        }
+
+        for (Map<String, Object> item : items) {
+            double cantidad = asDouble(item.get("cantidad"));
+            if (cantidad <= 0) {
+                throw new IllegalArgumentException("Todas las cantidades deben ser mayores a cero.");
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("nombre", nombre);
+        out.put("descripcion", descripcion);
+        out.put("badge", badge);
+        out.put("activo", activo);
+        out.put("observaciones", observaciones);
+        out.put("items", items);
+        return out;
+    }
+
+    private static Object firstNonNull(Object... values) {
+        for (Object v : values) {
+            if (v != null) {
+                return v;
+            }
+        }
+        return null;
+    }
+
+    private static void replacePaqueteInsumos(Connection conn, int paqueteId, List<Map<String, Object>> items) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE paquete_insumos SET deleted_at = NOW(), updated_at = NOW() WHERE paquete_id = ? AND deleted_at IS NULL")) {
+            ps.setInt(1, paqueteId);
+            ps.executeUpdate();
+        }
+
+        for (Map<String, Object> item : items) {
+            Map<String, Object> insumo = getInsumoRef(conn, item);
+            insertPaqueteInsumo(conn, paqueteId, insumo, asDouble(item.get("cantidad")));
+        }
+    }
+
+    private static void insertPaqueteInsumo(Connection conn, int paqueteId, Map<String, Object> insumo, double cantidad) throws Exception {
+        String sql = """
+            INSERT INTO paquete_insumos
+            (paquete_id, insumo_id, codigo_snapshot, descripcion_snapshot,
+             unidad_snapshot, cantidad, precio_snapshot, impuesto_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, paqueteId);
+            ps.setInt(2, parsePlainInt(asString(insumo.get("id"))));
+            ps.setString(3, asString(insumo.get("codigo")));
+            ps.setString(4, asString(insumo.get("descripcion")));
+            ps.setString(5, asString(insumo.get("unidad")));
+            ps.setDouble(6, cantidad > 0 ? cantidad : 1.0);
+            ps.setDouble(7, positive(asDouble(firstNonNull(insumo.get("precio"), insumo.get("precioUnitario")))));
+            ps.setDouble(8, normalizePct(asDouble(insumo.get("impuestoPct")), 0.16));
+            ps.executeUpdate();
+        }
+    }
+
+    private static Map<String, Object> mapPaqueteRow(Connection conn, ResultSet rs) throws Exception {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", rs.getInt("id"));
+        out.put("key", asString(rs.getString("clave")));
+        out.put("clave", asString(rs.getString("clave")));
+        out.put("nombre", asString(rs.getString("nombre")));
+        out.put("label", asString(rs.getString("nombre")));
+        out.put("descripcion", asString(rs.getString("descripcion")));
+        out.put("description", asString(rs.getString("descripcion")));
+        out.put("badge", asString(rs.getString("badge")));
+        out.put("activo", rs.getBoolean("activo"));
+        out.put("estatus", rs.getBoolean("activo") ? "Activo" : "Inactivo");
+        out.put("observaciones", asString(rs.getString("observaciones")));
+        out.put("createdAt", toMillis(rs.getTimestamp("created_at")));
+        out.put("updatedAt", toMillis(rs.getTimestamp("updated_at")));
+
+        List<Map<String, Object>> items = listPaqueteInsumos(conn, rs.getInt("id"));
+        out.put("items", items);
+        out.put("insumos", items);
+
+        double subtotal = 0;
+        double impuestos = 0;
+        for (Map<String, Object> item : items) {
+            double cantidad = asDouble(item.get("cantidad"));
+            double precio = positive(asDouble(firstNonNull(item.get("precio"), item.get("precioUnitario"))));
+            double impuestoPct = normalizePct(asDouble(item.get("impuestoPct")), 0.16);
+            subtotal += cantidad * precio;
+            impuestos += cantidad * precio * impuestoPct;
+        }
+        out.put("subtotal", subtotal);
+        out.put("impuestos", impuestos);
+        out.put("total", subtotal + impuestos);
+        return out;
+    }
+
+    private static List<Map<String, Object>> listPaqueteInsumos(Connection conn, int paqueteId) throws Exception {
+        String sql = """
+            SELECT pi.id, pi.paquete_id, pi.insumo_id,
+                   pi.codigo_snapshot, pi.descripcion_snapshot, pi.unidad_snapshot,
+                   pi.cantidad, pi.precio_snapshot, pi.impuesto_snapshot,
+                   i.codigo AS ins_codigo, i.descripcion AS ins_descripcion,
+                   i.unidad AS ins_unidad, i.precio_unitario AS ins_precio,
+                   i.impuesto_pct AS ins_impuesto, i.activo AS ins_activo,
+                   i.deleted_at AS ins_deleted
+            FROM paquete_insumos pi
+            LEFT JOIN insumos_catalogo i ON i.id = pi.insumo_id
+            WHERE pi.paquete_id = ? AND pi.deleted_at IS NULL
+            ORDER BY pi.id ASC
+        """;
+        List<Map<String, Object>> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, paqueteId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    boolean insumoActivo = rs.getTimestamp("ins_deleted") == null && rs.getBoolean("ins_activo");
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", rs.getInt("id"));
+                    item.put("paqueteId", paqueteId);
+                    item.put("insumoId", rs.getObject("insumo_id") != null ? rs.getInt("insumo_id") : null);
+                    item.put("catalogId", rs.getObject("insumo_id") != null ? rs.getInt("insumo_id") : null);
+                    item.put("codigo", insumoActivo && !isBlank(rs.getString("ins_codigo")) ? asString(rs.getString("ins_codigo")) : asString(rs.getString("codigo_snapshot")));
+                    item.put("descripcion", insumoActivo && !isBlank(rs.getString("ins_descripcion")) ? asString(rs.getString("ins_descripcion")) : asString(rs.getString("descripcion_snapshot")));
+                    item.put("unidad", insumoActivo && !isBlank(rs.getString("ins_unidad")) ? asString(rs.getString("ins_unidad")) : asString(rs.getString("unidad_snapshot")));
+                    item.put("cantidad", rs.getDouble("cantidad"));
+                    item.put("precio", insumoActivo ? rs.getDouble("ins_precio") : rs.getDouble("precio_snapshot"));
+                    item.put("precioUnitario", insumoActivo ? rs.getDouble("ins_precio") : rs.getDouble("precio_snapshot"));
+                    item.put("impuestoPct", insumoActivo ? rs.getDouble("ins_impuesto") : rs.getDouble("impuesto_snapshot"));
+                    item.put("activo", insumoActivo);
+                    out.add(item);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String generatePackageKey(Connection conn, String nombre, Integer excludeId) throws Exception {
+        String base = slugify(asString(nombre));
+        if (isBlank(base)) {
+            base = "paquete";
+        }
+        String candidate = base;
+        int suffix = 2;
+        while (existsPackageKey(conn, candidate, excludeId)) {
+            candidate = base + "-" + suffix;
+            suffix++;
+        }
+        return candidate;
+    }
+
+    private static boolean existsPackageKey(Connection conn, String clave, Integer excludeId) throws Exception {
+        String sql = excludeId == null
+                ? "SELECT id FROM paquetes_catalogo WHERE clave = ? AND deleted_at IS NULL LIMIT 1"
+                : "SELECT id FROM paquetes_catalogo WHERE clave = ? AND id <> ? AND deleted_at IS NULL LIMIT 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, clave);
+            if (excludeId != null) {
+                ps.setInt(2, excludeId);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static String slugify(String value) {
+        String s = asString(value).toLowerCase();
+        s = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-+|-+$", "");
+        return isBlank(s) ? "paquete" : s;
     }
 
     // =========================================================
@@ -1652,7 +2233,11 @@ public final class BackendStore {
             return 0;
         }
         try {
-            return Integer.parseInt(value.trim());
+            String txt = value.trim();
+            if (txt.matches("^-?\\d+(\\.0+)?$")) {
+                return (int) Double.parseDouble(txt);
+            }
+            return Integer.parseInt(txt);
         } catch (Exception ex) {
             return 0;
         }

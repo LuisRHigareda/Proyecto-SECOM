@@ -58,6 +58,22 @@ export function removeInsumo(id){
   return request('DELETE', `api/insumos/${encodeURIComponent(id)}`);
 }
 
+export function getPaquetes(){
+  return request('GET', 'api/paquetes');
+}
+
+export function savePaquete(paquete){
+  return request('POST', 'api/paquetes', paquete);
+}
+
+export function updatePaquete(id, patch){
+  return request('PUT', `api/paquetes/${encodeURIComponent(id)}`, patch);
+}
+
+export function removePaquete(id){
+  return request('DELETE', `api/paquetes/${encodeURIComponent(id)}`);
+}
+
 export function getProjects(){
   return request('GET', 'api/projects');
 }
