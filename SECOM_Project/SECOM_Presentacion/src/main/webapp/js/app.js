@@ -255,7 +255,7 @@ function renderTariffComparisonTable(selected = state.selectedTariff) {
   `;
 }
 
-init();
+//init();
 
 function init() {
     // Theme y preferencias
@@ -4401,3 +4401,1083 @@ function validateReceiptAgainstSelection(receipt, selected) {
 
     return {ok: true, message: 'Tarifa y periodo verificados.'};
 }
+
+/* =========================================================
+   SECOM - Wizard guiado de cotización V2
+   Pegar este bloque AL FINAL de app.js
+   ========================================================= */
+
+function secomV2Number(v, fallback = 0) {
+    const n = Number(String(v ?? '').replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function secomV2GetCoveragePct(q) {
+    const consumo = Number(q?.consumoMensual || 0);
+    const produccion = Number(q?.produccionMensual || 0);
+
+    if (!state.selectedPackage && !(state.receipt?.insumos || []).length) {
+        return null;
+    }
+
+    if (consumo <= 0) {
+        return 0;
+    }
+
+    return Math.round((produccion / consumo) * 1000) / 10;
+}
+
+function secomV2SyncReceiptBasics() {
+    if (!state.receipt) {
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+    }
+
+    state.receipt.periodo = state.receipt.periodo || {raw: '', start: null, end: null, days: 0};
+
+    if ($('#rServicio')) {
+        state.receipt.servicio = ($('#rServicio')?.value || '').replace(/\D/g, '').slice(0, 15);
+    }
+
+    if ($('#rTarifa')) {
+        state.receipt.tarifa = ($('#rTarifa')?.value || '').trim().toUpperCase();
+    }
+
+    if ($('#rNombre')) {
+        state.receipt.nombre = ($('#rNombre')?.value || '').trim();
+    }
+
+    if ($('#rDireccion')) {
+        state.receipt.direccion = ($('#rDireccion')?.value || '').trim();
+    }
+
+    if ($('#rPeriodo')) {
+        state.receipt.periodo.raw = ($('#rPeriodo')?.value || '').trim();
+    }
+
+    if ($('#rTipoPeriodo')) {
+        state.receipt.tipoPeriodo = ($('#rTipoPeriodo')?.value || '').trim();
+        state.receipt.periodo.days = state.receipt.tipoPeriodo === 'Bimestral' ? 60 : 30;
+    }
+
+    if ($('#rEstado')) {
+        state.receipt.estado = ($('#rEstado')?.value || '').trim().toUpperCase();
+    }
+
+    state.client.nombre = state.client.nombre || state.receipt.nombre || '';
+    state.client.direccion = state.client.direccion || state.receipt.direccion || '';
+
+    applyTariffCalculationAssumptions(state.receipt, state.selectedTariff);
+    state.quote = currentStep2Quote();
+    return state.quote;
+}
+
+function secomV2SyncConsumption() {
+    if (!state.receipt) {
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+    }
+
+    if ($('#rConsumo')) {
+        state.receipt.consumoPeriodo = secomV2Number($('#rConsumo')?.value, state.receipt.consumoPeriodo || 0);
+    }
+
+    if ($('#rTotal')) {
+        state.receipt.totalAPagar = secomV2Number($('#rTotal')?.value, state.receipt.totalAPagar || 0);
+    }
+
+    state.receipt.ajusteConsumo = {
+        kwhMes: secomV2Number($('#rAjusteKwh')?.value, state.receipt?.ajusteConsumo?.kwhMes || 0),
+        nota: ($('#rAjusteNota')?.value || state.receipt?.ajusteConsumo?.nota || '').trim(),
+    };
+
+    applyTariffCalculationAssumptions(state.receipt, state.selectedTariff);
+    state.quote = currentStep2Quote();
+    return state.quote;
+}
+
+function secomV2SyncPrecalc() {
+    if (!state.receipt) {
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+    }
+
+    if ($('#pYield')) {
+        state.params.yieldKwhPerKwpMonth = secomV2Number($('#pYield')?.value, state.params.yieldKwhPerKwpMonth || 135);
+    }
+
+    if ($('#pPanel')) {
+        state.params.panelWatts = secomV2Number($('#pPanel')?.value, state.params.panelWatts || 550);
+    }
+
+    if ($('#pCost')) {
+        state.params.costPerKwp = secomV2Number($('#pCost')?.value, state.params.costPerKwp || 22000);
+    }
+
+    if ($('#pCont')) {
+        state.params.contingencyPct = Math.max(0, Math.min(0.30, secomV2Number($('#pCont')?.value, state.params.contingencyPct || 0.06)));
+    }
+
+    if ($('#oPaneles')) {
+        const pManual = secomV2Number($('#oPaneles')?.value, 0);
+        state.overrides.paneles = pManual > 0 ? Math.round(pManual) : null;
+    }
+
+    if ($('#oConsumoMensual')) {
+        const consumoManual = secomV2Number($('#oConsumoMensual')?.value, 0);
+        state.overrides.consumoMensual = consumoManual > 0 ? consumoManual : null;
+    }
+
+    applyTariffCalculationAssumptions(state.receipt, state.selectedTariff);
+    state.quote = currentStep2Quote();
+    return state.quote;
+}
+
+function secomV2SyncPackage() {
+    if (!state.receipt) {
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+    }
+
+    state.quoteMeta.panelModelo = ($('#mPanelModelo')?.value || state.quoteMeta.panelModelo || '').trim();
+    state.quoteMeta.panelDimensiones = ($('#mPanelDim')?.value || state.quoteMeta.panelDimensiones || '').trim();
+    state.quoteMeta.inversorModelo = ($('#mInversor')?.value || state.quoteMeta.inversorModelo || '').trim();
+    state.quoteMeta.tipoTecho = ($('#mTecho')?.value || state.quoteMeta.tipoTecho || 'No especificado');
+    state.quoteMeta.perdidasSombraPct = Number($('#mSombras')?.value ?? state.quoteMeta.perdidasSombraPct ?? 0);
+    state.quoteMeta.sombras = $('#mSombras')?.selectedOptions?.[0]?.textContent?.split('(')?.[0]?.trim() || state.quoteMeta.sombras || 'No especificado';
+    state.quoteMeta.notasFisicas = ($('#mNotasFisicas')?.value || state.quoteMeta.notasFisicas || '').trim();
+
+    state.receipt.instalacion = {
+        ...(state.receipt.instalacion || {}),
+        tipoTecho: state.quoteMeta.tipoTecho,
+        perdidasSombraPct: state.quoteMeta.perdidasSombraPct,
+        sombras: state.quoteMeta.sombras,
+        notasFisicas: state.quoteMeta.notasFisicas,
+        panelModelo: state.quoteMeta.panelModelo,
+        panelDimensiones: state.quoteMeta.panelDimensiones,
+        inversorModelo: state.quoteMeta.inversorModelo,
+        paqueteSeleccionado: state.selectedPackage || '',
+    };
+
+    state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct))
+            ? Number(state.receipt.impuestosPct)
+            : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+
+    state.quote = currentStep2Quote();
+    return state.quote;
+}
+
+/* ------------------------------
+   Sobrescribir stepper
+------------------------------ */
+
+buildStepper = function () {
+    const el = $('#stepper');
+    const steps = [
+        {n: 1, label: 'Recibo'},
+        {n: 2, label: 'Consumo'},
+        {n: 3, label: 'Pre-cálculo'},
+        {n: 4, label: 'Paquete'},
+        {n: 5, label: 'Generar'},
+    ];
+
+    el.innerHTML = steps.map((s, i) => {
+        const cls = s.n === state.wizardStep ? 'is-active' : (s.n < state.wizardStep ? 'is-done' : '');
+        const line = i < steps.length - 1 ? '<div class="stepper__line"></div>' : '';
+        return `
+      <div class="stepper__item ${cls}">
+        <div class="stepper__dot">${s.n}</div>
+        <div class="stepper__label">${s.label}</div>
+      </div>
+      ${line}
+    `;
+    }).join('');
+
+    window.lucide?.createIcons();
+};
+
+/* ------------------------------
+   Sobrescribir render principal
+------------------------------ */
+
+renderWizard = function () {
+    const left = $('#wizardLeft');
+    const right = $('#wizardRight');
+
+    if (state.wizardStep === 1) {
+        left.innerHTML = renderStep1Left();
+        right.innerHTML = renderStep1Right();
+        wireStep1();
+    } else if (state.wizardStep === 2) {
+        left.innerHTML = secomV2RenderConsumptionLeft();
+        right.innerHTML = secomV2RenderConsumptionRight();
+        secomV2WireConsumption();
+    } else if (state.wizardStep === 3) {
+        left.innerHTML = secomV2RenderPrecalcLeft();
+        right.innerHTML = secomV2RenderPrecalcRight();
+        secomV2WirePrecalc();
+    } else if (state.wizardStep === 4) {
+        left.innerHTML = secomV2RenderPackageLeft();
+        right.innerHTML = secomV2RenderPackageRight();
+        secomV2WirePackage();
+    } else {
+        left.innerHTML = renderStep4Left();
+        right.innerHTML = renderStep4Right();
+        wireStep4();
+    }
+
+    window.lucide?.createIcons();
+};
+
+/* ------------------------------
+   Paso 1: Recibo / cliente
+------------------------------ */
+
+renderStep1Left = function () {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+
+    return `
+    <div class="card__title">Validación de recibo CFE</div>
+    <div class="help">Sube el recibo o inicia captura manual. En este paso solo valida datos básicos detectados por OCR o captura manual.</div>
+
+    <input id="fileInput" type="file" accept="application/pdf,image/png,image/jpeg" hidden />
+
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Cargar recibo">
+      <div class="dropzone__icon"><i data-lucide="upload"></i></div>
+      <div style="min-width:0">
+        <div class="dropzone__title">Arrastre y suelte aquí, o seleccione un archivo</div>
+        <div class="dropzone__sub" id="fileHint">PDF o imagen</div>
+      </div>
+    </div>
+
+    <div class="wizard-actions">
+      <button class="btn btn--primary" id="btnAnalyze"><i data-lucide="scan"></i>Analizar</button>
+      <button class="btn" id="btnManualCapture"><i data-lucide="keyboard"></i>Captura manual</button>
+      <button class="btn" id="btnClear"><i data-lucide="trash-2"></i>Limpiar</button>
+    </div>
+
+    <div class="quote-wizard-panel" style="margin-top:14px">
+      <div class="card__subtitle">Información del recibo</div>
+
+      <div class="grid cols-2" style="margin-top:10px">
+        <div class="field">
+          <label>No. de servicio</label>
+          <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
+        </div>
+        <div class="field">
+          <label>Nombre del cliente</label>
+          <input id="rNombre" placeholder="Titular del recibo" value="${escapeAttr(r?.nombre || '')}" />
+        </div>
+        <div class="field">
+          <label>Tarifa</label>
+          <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || state.selectedTariff?.label || '')}" />
+        </div>
+        <div class="field">
+          <label>Estado</label>
+          <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:10px">
+        <label>Dirección</label>
+        <textarea id="rDireccion" rows="3" placeholder="Dirección del suministro">${escapeHtml(r?.direccion || '')}</textarea>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div class="field" style="flex:1.4">
+          <label>Periodo facturado</label>
+          <input id="rPeriodo" placeholder="DD MMM AA - DD MMM AA" value="${escapeAttr(r?.periodo?.raw || '')}" />
+        </div>
+        <div class="field">
+          <label>Tipo de periodo</label>
+          <select id="rTipoPeriodo">
+            <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>Mensual</option>
+            <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>Bimestral</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <div class="help" id="analyzeMsg"> </div>
+      <button class="btn btn--success" id="btnStep1Next" ${state.receipt ? '' : 'disabled'}>
+        <i data-lucide="arrow-right"></i>Continuar
+      </button>
+    </div>
+  `;
+};
+
+renderStep1Right = function () {
+    const r = state.receipt || {};
+
+    return `
+    <div class="card__title">Vista previa</div>
+
+    <div class="preview" id="preview">
+      <div class="preview__empty" id="previewEmpty">Sin archivo cargado</div>
+    </div>
+
+    <div class="quote-summary-panel" style="margin-top:12px">
+      <div class="quote-summary-panel__title">Resumen de validación</div>
+      <div class="review-row"><span>No. de servicio</span><b id="kpiServicio">${escapeHtml(r.servicio || '—')}</b></div>
+      <div class="review-row"><span>Cliente</span><b id="kpiCliente">${escapeHtml(r.nombre || '—')}</b></div>
+      <div class="review-row"><span>Tarifa</span><b id="kpiTarifa">${escapeHtml(r.tarifa || state.selectedTariff?.label || '—')}</b></div>
+      <div class="review-row"><span>Dirección</span><b id="kpiDireccion">${escapeHtml(r.direccion || '—')}</b></div>
+      <div class="review-row"><span>Periodo</span><b id="kpiPeriodo">${escapeHtml(r.periodo?.raw || '—')}</b></div>
+      <div class="review-row"><span>Tipo</span><b id="kpiTipoPeriodo">${escapeHtml(r.tipoPeriodo || state.selectedTariff?.periodo || '—')}</b></div>
+      <div class="review-row"><span>Estado</span><b id="kpiEstado">${escapeHtml(r.estado || '—')}</b></div>
+    </div>
+  `;
+};
+
+updateStep1FromReceipt = function () {
+    const r = state.receipt;
+    if (!r) {
+        return;
+    }
+
+    const setText = (id, value) => {
+        const el = $(`#${id}`);
+        if (el) {
+            el.textContent = value;
+        }
+    };
+
+    setText('kpiTarifa', r.tarifa || state.selectedTariff?.label || '—');
+    setText('kpiServicio', r.servicio || '—');
+    setText('kpiPeriodo', r.periodo?.raw || '—');
+    setText('kpiTipoPeriodo', r.tipoPeriodo || state.selectedTariff?.periodo || '—');
+    setText('kpiCliente', r.nombre || '—');
+    setText('kpiDireccion', r.direccion || '—');
+    setText('kpiEstado', r.estado || '—');
+
+    if ($('#rServicio')) $('#rServicio').value = r.servicio || '';
+    if ($('#rNombre')) $('#rNombre').value = r.nombre || '';
+    if ($('#rTarifa')) $('#rTarifa').value = r.tarifa || state.selectedTariff?.label || '';
+    if ($('#rDireccion')) $('#rDireccion').value = r.direccion || '';
+    if ($('#rPeriodo')) $('#rPeriodo').value = r.periodo?.raw || '';
+    if ($('#rTipoPeriodo')) $('#rTipoPeriodo').value = r.tipoPeriodo || state.selectedTariff?.periodo || 'Mensual';
+    if ($('#rEstado')) $('#rEstado').value = r.estado || '';
+};
+
+wireStep1 = function () {
+    const fileInput = $('#fileInput');
+    const dz = $('#dropzone');
+
+    const pickFile = () => fileInput?.click();
+
+    dz?.addEventListener('click', pickFile);
+    dz?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') pickFile();
+    });
+
+    dz?.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dz.classList.add('is-dragover');
+    });
+
+    dz?.addEventListener('dragleave', () => dz.classList.remove('is-dragover'));
+
+    dz?.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dz.classList.remove('is-dragover');
+        const f = e.dataTransfer.files?.[0];
+        if (f) handleFileSelected(f);
+    });
+
+    fileInput?.addEventListener('change', () => {
+        const f = fileInput.files?.[0];
+        if (f) handleFileSelected(f);
+    });
+
+    $('#btnClear')?.addEventListener('click', () => resetWizard(true));
+
+    $('#btnManualCapture')?.addEventListener('click', () => {
+        state.receiptFile = null;
+        state.receiptCanvas = null;
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+        state.receipt.instalacion = state.receipt.instalacion || {};
+        state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+        state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+        state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+
+        updateStep1FileHint();
+        updateStep1Preview();
+        updateStep1FromReceipt();
+
+        $('#analyzeMsg').textContent = 'Captura manual habilitada. Valida los datos básicos y continúa.';
+        $('#btnStep1Next').disabled = false;
+
+        setPillStatus('Captura manual', 'busy');
+        toast({title: 'Captura manual', message: 'Puedes continuar sin subir archivo.', icon: 'keyboard'});
+    });
+
+    $('#btnAnalyze')?.addEventListener('click', async () => {
+        if (!state.receiptFile) {
+            toast({title: 'Falta el archivo', message: 'Selecciona un recibo para continuar.', icon: 'alert-triangle'});
+            return;
+        }
+
+        setPillStatus('Analizando…', 'busy');
+        $('#analyzeMsg').textContent = 'Procesando recibo…';
+        $('#btnAnalyze').disabled = true;
+
+        try {
+            const result = await analyzeReceiptFile(state.receiptFile, {
+                selectedTariff: state.selectedTariff,
+                onProgress: (p) => {
+                    if (p?.message) $('#analyzeMsg').textContent = p.message;
+                }
+            });
+
+            if (!result?.ok) {
+                throw new Error(result?.message || 'No se pudo analizar el recibo.');
+            }
+
+            state.receipt = result.parsed;
+            state.receipt.instalacion = state.receipt.instalacion || {};
+            state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+            state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+            state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+            state.receiptCanvas = result.canvas;
+
+            applyTariffCalculationAssumptions(state.receipt, state.selectedTariff);
+
+            state.client.nombre = state.client.nombre || state.receipt.nombre || '';
+            state.client.direccion = state.client.direccion || state.receipt.direccion || '';
+
+            updateStep1FromReceipt();
+
+            setPillStatus('Listo', 'ok');
+            $('#analyzeMsg').textContent = 'Recibo analizado correctamente.';
+            $('#btnStep1Next').disabled = false;
+
+            toast({title: 'Recibo listo', message: 'Datos detectados y listos para validar.', icon: 'check-circle'});
+        } catch (err) {
+            console.error(err);
+            state.receipt = createEmptyReceiptData(state.selectedTariff);
+            state.receipt.instalacion = state.receipt.instalacion || {};
+            state.receipt.insumos = Array.isArray(state.receipt.insumos) ? state.receipt.insumos : [];
+            state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct)) ? Number(state.receipt.impuestosPct) : 0.16;
+            state.receipt.instalacion.panelesGrupos = Array.isArray(state.receipt.instalacion.panelesGrupos) ? state.receipt.instalacion.panelesGrupos : [];
+            state.receipt.analisisEstado = 'fallido';
+            state.receipt.analisisMensaje = err?.message || 'No se pudo analizar el recibo.';
+
+            updateStep1FromReceipt();
+
+            $('#btnStep1Next').disabled = false;
+            setPillStatus('Análisis fallido · captura manual', 'error');
+            $('#analyzeMsg').textContent = `${state.receipt.analisisMensaje} Captura los datos manualmente para continuar.`;
+
+            toast({title: 'Análisis fallido', message: 'Se habilitó captura manual.', icon: 'x-circle'});
+        } finally {
+            $('#btnAnalyze').disabled = false;
+        }
+    });
+
+    ['#rServicio', '#rTarifa', '#rNombre', '#rDireccion', '#rPeriodo', '#rTipoPeriodo', '#rEstado'].forEach(id => {
+        $(id)?.addEventListener('input', () => {
+            secomV2SyncReceiptBasics();
+            updateStep1FromReceipt();
+            $('#btnStep1Next').disabled = false;
+        });
+        $(id)?.addEventListener('change', () => {
+            secomV2SyncReceiptBasics();
+            updateStep1FromReceipt();
+            $('#btnStep1Next').disabled = false;
+        });
+    });
+
+    $('#btnStep1Next')?.addEventListener('click', () => {
+        secomV2SyncReceiptBasics();
+        gotoStep(2);
+    });
+
+    updateStep1FileHint();
+    updateStep1Preview();
+    updateStep1FromReceipt();
+};
+
+/* ------------------------------
+   Paso 2: Consumo
+------------------------------ */
+
+function secomV2RenderConsumptionLeft() {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const q = currentStep2Quote();
+    const hist = (r?.historial || []).slice(-12);
+    const daily = Number(q.consumoMensual || 0) / 30;
+
+    return `
+    <div class="card__title">Información de consumo</div>
+    <div class="help">Revisa únicamente consumo, promedio mensual, promedio diario y monto promedio del recibo.</div>
+
+    <div class="grid cols-4 quote-kpi-grid" style="margin-top:12px">
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Promedio mensual</div>
+        <div class="kpi__value">${formatNumber(q.consumoMensual || 0)} kWh</div>
+      </div>
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Consumo diario</div>
+        <div class="kpi__value">${formatNumber(daily)} kWh</div>
+      </div>
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Recibo promedio</div>
+        <div class="kpi__value">${formatCurrencyMXN(r.totalAPagar || 0)}</div>
+      </div>
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Periodo</div>
+        <div class="kpi__value">${escapeHtml(r.tipoPeriodo || state.selectedTariff?.periodo || '—')}</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <div class="field">
+        <label>Consumo del periodo (kWh)</label>
+        <input id="rConsumo" type="number" min="0" step="1" value="${escapeAttr(String(r?.consumoPeriodo || 0))}" />
+      </div>
+      <div class="field">
+        <label>Total a pagar (MXN)</label>
+        <input id="rTotal" type="number" min="0" step="1" value="${escapeAttr(String(r?.totalAPagar || 0))}" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>Ajuste de consumo (kWh/mes)</label>
+        <input id="rAjusteKwh" type="number" step="1" value="${escapeAttr(String(r?.ajusteConsumo?.kwhMes || 0))}" />
+      </div>
+      <div class="field">
+        <label>Nota del ajuste</label>
+        <input id="rAjusteNota" value="${escapeAttr(r?.ajusteConsumo?.nota || '')}" placeholder="Carga futura, ampliación, etc." />
+      </div>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:16px">Historial de consumo</div>
+    <div style="overflow:auto; margin-top:10px">
+      <table class="table table--tight">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Consumo (kWh)</th>
+            <th>Pago (MXN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hist.length ? hist.map((h, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${formatNumber(h.kwh || 0)}</td>
+              <td>${formatCurrencyMXN(h.pago || 0)}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="3" style="color:var(--muted)">Sin datos históricos detectados.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBackConsumption"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNextConsumption"><i data-lucide="arrow-right"></i>Continuar</button>
+    </div>
+  `;
+}
+
+function secomV2RenderConsumptionRight() {
+    return `
+    <div class="card__title">Tendencia de consumo</div>
+    <div class="help">Vista rápida del histórico detectado para confirmar que los consumos tengan sentido.</div>
+
+    <div style="margin-top:12px; min-height:260px">
+      <canvas id="chart" height="220"></canvas>
+    </div>
+
+    ${renderTariffImpactBox(state.selectedTariff, currentStep2Quote())}
+  `;
+}
+
+function secomV2WireConsumption() {
+    if (!state.receipt) {
+        gotoStep(1);
+        return;
+    }
+
+    $('#btnBackConsumption')?.addEventListener('click', () => gotoStep(1));
+
+    $('#btnNextConsumption')?.addEventListener('click', () => {
+        secomV2SyncConsumption();
+        gotoStep(3);
+    });
+
+    ['#rConsumo', '#rTotal', '#rAjusteKwh', '#rAjusteNota'].forEach(id => {
+        $(id)?.addEventListener('input', debounce(() => {
+            secomV2SyncConsumption();
+            renderWizard();
+        }, 180));
+    });
+
+    renderChart();
+}
+
+/* ------------------------------
+   Paso 3: Pre-cálculo
+------------------------------ */
+
+function secomV2RenderPrecalcLeft() {
+    const q = currentStep2Quote();
+    const requiredKwp = Number(q.consumoMensual || 0) / Math.max(1, Number(q.yieldEfectivo || state.params.yieldKwhPerKwpMonth || 135));
+    const daily = Number(q.consumoMensual || 0) / 30;
+
+    return `
+    <div class="card__title">Pre-cálculo energético</div>
+    <div class="help">Resultado técnico previo a seleccionar paquete o productos. La cobertura se mostrará hasta elegir productos.</div>
+
+    <div class="energy-hero">
+      <div class="energy-metric">
+        <i data-lucide="zap"></i>
+        <span>kW requeridos</span>
+        <b>${requiredKwp.toFixed(2)} kWp</b>
+      </div>
+      <div class="energy-metric">
+        <i data-lucide="sun"></i>
+        <span>kW recomendados</span>
+        <b>${Number(q.kwp || 0).toFixed(2)} kWp</b>
+      </div>
+      <div class="energy-metric">
+        <i data-lucide="activity"></i>
+        <span>Producción estimada</span>
+        <b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b>
+      </div>
+      <div class="energy-metric">
+        <i data-lucide="gauge"></i>
+        <span>Consumo diario</span>
+        <b>${formatNumber(daily)} kWh/día</b>
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:14px">
+      <div class="field">
+        <label>Producción promedio (kWh/kWp-mes)</label>
+        <input id="pYield" type="number" min="60" max="220" step="1" value="${escapeAttr(String(state.params.yieldKwhPerKwpMonth))}" />
+      </div>
+      <div class="field">
+        <label>Panel (W)</label>
+        <input id="pPanel" type="number" min="350" max="700" step="10" value="${escapeAttr(String(state.params.panelWatts))}" />
+      </div>
+      <div class="field">
+        <label>Costo por kWp (MXN)</label>
+        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${escapeAttr(String(state.params.costPerKwp))}" />
+      </div>
+      <div class="field">
+        <label>Contingencia</label>
+        <input id="pCont" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(state.params.contingencyPct))}" />
+      </div>
+      <div class="field">
+        <label>Paneles manuales opcional</label>
+        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(String(state.overrides?.paneles || ''))}" placeholder="Auto: ${escapeAttr(String(q.paneles || 0))}" />
+      </div>
+      <div class="field">
+        <label>Consumo mensual manual opcional</label>
+        <input id="oConsumoMensual" type="number" min="0" step="1" value="${escapeAttr(String(state.overrides?.consumoMensual || ''))}" placeholder="Auto: ${escapeAttr(String(q.consumoMensual || 0))}" />
+      </div>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBackPrecalc"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNextPrecalc"><i data-lucide="arrow-right"></i>Seleccionar paquete</button>
+    </div>
+  `;
+}
+
+function secomV2RenderPrecalcRight() {
+    const q = currentStep2Quote();
+
+    return `
+    <div class="card__title">Lectura técnica</div>
+
+    <div class="review-panel" style="margin-top:12px">
+      <div class="review-row"><span>Consumo mensual usado</span><b>${formatNumber(q.consumoMensual || 0)} kWh</b></div>
+      <div class="review-row"><span>Paneles sugeridos</span><b>${formatNumber(q.paneles || 0)}</b></div>
+      <div class="review-row"><span>Watts por panel</span><b>${formatNumber(q.panelWatts || state.params.panelWatts || 0)} W</b></div>
+      <div class="review-row"><span>Producción anual</span><b>${formatNumber(q.produccionAnual || 0)} kWh</b></div>
+      <div class="review-row"><span>Rendimiento efectivo</span><b>${formatNumber(q.yieldEfectivo || 0)} kWh/kWp-mes</b></div>
+    </div>
+
+    <div class="review-ok" style="margin-top:12px">
+      La cobertura no se muestra aquí porque depende del paquete o productos seleccionados.
+    </div>
+  `;
+}
+
+function secomV2WirePrecalc() {
+    if (!state.receipt) {
+        gotoStep(1);
+        return;
+    }
+
+    $('#btnBackPrecalc')?.addEventListener('click', () => gotoStep(2));
+
+    $('#btnNextPrecalc')?.addEventListener('click', () => {
+        secomV2SyncPrecalc();
+        gotoStep(4);
+    });
+
+    ['#pYield', '#pPanel', '#pCost', '#pCont', '#oPaneles', '#oConsumoMensual'].forEach(id => {
+        $(id)?.addEventListener('input', debounce(() => {
+            secomV2SyncPrecalc();
+            renderWizard();
+        }, 180));
+    });
+}
+
+/* ------------------------------
+   Paso 4: Paquete y productos
+------------------------------ */
+
+function secomV2RenderPackageLeft() {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const q = currentStep2Quote();
+    const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
+    const impuestosPct = Number.isFinite(Number(r?.impuestosPct))
+            ? Number(r.impuestosPct)
+            : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+
+    return `
+    <div class="card__title">Paquete y productos</div>
+    <div class="help">Selecciona paquete, paneles, inversor, estructura, protecciones e insumos adicionales.</div>
+
+    <div class="card__subtitle" style="margin-top:14px">Paquete solar</div>
+    <div class="package-grid" style="margin-top:10px">
+      ${renderPackageCards()}
+    </div>
+
+    <div class="row" style="justify-content:space-between; margin-top:10px; align-items:flex-start">
+      <div class="help" id="packageLabel">
+        ${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado.'}
+      </div>
+      <button class="btn" id="btnClearPackage"><i data-lucide="eraser"></i>Quitar paquete</button>
+    </div>
+
+    <div class="package-preview" id="packagePreview" style="margin-top:10px">
+      ${renderPackagePreviewItems()}
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Componentes principales</div>
+
+    <div class="grid cols-3" style="margin-top:10px">
+      <div class="field">
+        <label>Paneles</label>
+        <input id="mPanelModelo" placeholder="Ej. JA Solar 550 W" value="${escapeAttr(state.quoteMeta.panelModelo || '')}" />
+      </div>
+      <div class="field">
+        <label>Dimensiones del panel</label>
+        <input id="mPanelDim" placeholder="Ej. 2.27 x 1.13 m" value="${escapeAttr(state.quoteMeta.panelDimensiones || '')}" />
+      </div>
+      <div class="field">
+        <label>Inversor</label>
+        <input id="mInversor" placeholder="Ej. Huawei SUN2000" value="${escapeAttr(state.quoteMeta.inversorModelo || '')}" />
+      </div>
+      <div class="field">
+        <label>Estructura / tipo de techo</label>
+        <select id="mTecho">
+          ${['No especificado', 'Losa', 'Lámina', 'Teja', 'Otro'].map(x => `<option ${x === state.quoteMeta.tipoTecho ? 'selected' : ''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Sombras / pérdidas</label>
+        <select id="mSombras">
+          <option value="0" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0 ? 'selected' : ''}>Ninguna (0%)</option>
+          <option value="0.10" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.10 ? 'selected' : ''}>Baja (10%)</option>
+          <option value="0.20" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.20 ? 'selected' : ''}>Media (20%)</option>
+          <option value="0.35" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.35 ? 'selected' : ''}>Alta (35%)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Protecciones</label>
+        <input value="Protecciones CC/CA" disabled />
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Notas técnicas</label>
+      <textarea id="mNotasFisicas" rows="2" placeholder="Área disponible, orientación, estructura, protecciones u observaciones.">${escapeHtml(state.quoteMeta.notasFisicas || '')}</textarea>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:14px">Productos / insumos adicionales</div>
+
+    <div class="row" style="margin-top:10px; align-items:flex-end">
+      <div class="field" style="flex:2">
+        <label>Agregar desde catálogo</label>
+        <select id="insCatalog">
+          <option value="">Selecciona un insumo...</option>
+          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+        <button class="btn" id="btnAddCatalog"><i data-lucide="plus"></i>Agregar</button>
+        <button class="btn" id="btnAddManual"><i data-lucide="edit-3"></i>Agregar manual</button>
+      </div>
+    </div>
+
+    <div style="overflow:auto; margin-top:10px">
+      <table class="table table--tight" id="insTable">
+        <thead>
+          <tr>
+            <th style="min-width:140px">Código</th>
+            <th style="min-width:280px">Descripción</th>
+            <th style="min-width:120px">Cantidad</th>
+            <th style="min-width:120px">Unidad</th>
+            <th style="min-width:140px">Precio</th>
+            <th style="min-width:140px">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${insumos.length ? insumos.map((it, i) => renderInsumoRow(it, i)).join('') : `
+            <tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="insumos-summary" style="margin-top:10px">
+      <div class="insumos-summary__row"><span>Subtotal</span><b id="insSubtotal">—</b></div>
+      <div class="insumos-summary__row">
+        <span>Impuestos (IVA %)</span>
+        <div style="display:flex; align-items:center; gap:10px">
+          <input id="insTaxPct" class="insumos-summary__tax" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(Math.round(impuestosPct * 100 * 10) / 10))}" />
+          <b id="insTaxes">—</b>
+        </div>
+      </div>
+      <div class="insumos-summary__row insumos-summary__row--total"><span>Total</span><b id="insTotal">—</b></div>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBackPackage"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNextPackage"><i data-lucide="arrow-right"></i>Generar cotización</button>
+    </div>
+
+    <div class="help" id="msg2" style="margin-top:10px"></div>
+  `;
+}
+
+function secomV2RenderPackageRight() {
+    const q = currentStep2Quote();
+    const coverage = secomV2GetCoveragePct(q);
+
+    return `
+    <div class="card__title">Resumen de cotización</div>
+
+    <div class="quote-summary-panel" style="margin-top:12px">
+      <div class="quote-summary-panel__title">${state.selectedPackage ? 'Paquete seleccionado' : 'Selecciona productos'}</div>
+      <div class="review-row"><span>Instalado</span><b id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</b></div>
+      <div class="review-row"><span>Producción estimada</span><b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b></div>
+      <div class="review-row"><span>Cobertura</span><b id="summaryCoverage">${coverage == null ? 'Pendiente' : `${coverage}%`}</b></div>
+      <div class="review-row"><span>Ahorro estimado</span><b id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</b></div>
+      <div class="review-row"><span>Total cotización</span><b id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</b></div>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:12px">
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Paneles</div>
+        <div class="kpi__value">${formatNumber(q.paneles || 0)}</div>
+      </div>
+      <div class="kpi quote-kpi-card">
+        <div class="kpi__label">Retorno</div>
+        <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
+      </div>
+    </div>
+
+    <div id="step2Alerts" style="margin-top:12px">
+      ${state.selectedPackage || (state.receipt?.insumos || []).length
+            ? '<div class="review-ok">Productos listos para generar la cotización.</div>'
+            : '<div class="review-alert">Selecciona un paquete o agrega productos para calcular cobertura.</div>'}
+    </div>
+  `;
+}
+
+function secomV2RefreshPackageSummary() {
+    const q = secomV2SyncPackage();
+    const coverage = secomV2GetCoveragePct(q);
+
+    if ($('#step2Kwp')) {
+        $('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`;
+    }
+
+    if ($('#step2Saving')) {
+        $('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0);
+    }
+
+    if ($('#summaryCoverage')) {
+        $('#summaryCoverage').textContent = coverage == null ? 'Pendiente' : `${coverage}%`;
+    }
+
+    if ($('#kpiQuoteTotal')) {
+        $('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0);
+    }
+
+    if ($('#packageLabel')) {
+        $('#packageLabel').textContent = state.selectedPackage
+                ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual})
+                : 'Sin paquete seleccionado.';
+    }
+}
+
+applyPackagePreset = function (packageKey) {
+    secomV2SyncPackage();
+    state.selectedPackage = packageKey;
+
+    const q = state.quote || currentStep2Quote();
+
+    state.receipt.insumos = buildPackageItems(packageKey, {
+        quote: q,
+        receipt: state.receipt,
+        paneles: q.paneles,
+        consumoMensual: q.consumoMensual
+    });
+
+    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct))
+            ? Number(state.receipt.impuestosPct)
+            : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+
+    state.quote = currentStep2Quote();
+
+    renderWizard();
+
+    toast({
+        title: 'Paquete aplicado',
+        message: `${PACKAGE_PRESETS.find(p => p.key === packageKey)?.label || 'Paquete'} cargado con precios por defecto.`,
+        icon: 'package'
+    });
+};
+
+function secomV2WirePackage() {
+    if (!state.receipt) {
+        gotoStep(1);
+        return;
+    }
+
+    $('#btnBackPackage')?.addEventListener('click', () => gotoStep(3));
+
+    $('#btnNextPackage')?.addEventListener('click', () => {
+        const q = secomV2SyncPackage();
+        const msg = $('#msg2');
+
+        if (!state.client.nombre) {
+            state.client.nombre = state.receipt?.nombre || '';
+        }
+
+        if (!state.client.nombre) {
+            msg.textContent = 'Por favor, captura el nombre del cliente en la validación del recibo.';
+            toast({title: 'Falta información', message: 'El nombre del cliente es obligatorio.', icon: 'alert-triangle'});
+            return;
+        }
+
+        if (!state.receipt.servicio) {
+            msg.textContent = 'Por favor, captura el número de servicio del recibo.';
+            toast({title: 'Dato crítico faltante', message: 'El número de servicio es obligatorio para continuar.', icon: 'alert-triangle'});
+            return;
+        }
+
+        state.quote = q;
+        gotoStep(5);
+    });
+
+    $$('#route-cotizador [data-package]').forEach(btn => {
+        btn.addEventListener('click', () => applyPackagePreset(btn.dataset.package));
+    });
+
+    $('#btnClearPackage')?.addEventListener('click', () => {
+        state.selectedPackage = '';
+        if (state.receipt?.instalacion) {
+            state.receipt.instalacion.paqueteSeleccionado = '';
+        }
+        renderWizard();
+        toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
+    });
+
+    ['#mPanelModelo', '#mPanelDim', '#mInversor', '#mTecho', '#mSombras', '#mNotasFisicas'].forEach(id => {
+        $(id)?.addEventListener('input', debounce(secomV2RefreshPackageSummary, 120));
+        $(id)?.addEventListener('change', debounce(secomV2RefreshPackageSummary, 120));
+    });
+
+    setupInsumosCrud();
+    secomV2RefreshPackageSummary();
+}
+
+/* ------------------------------
+   Paso 5: Ajustar nombre y regreso
+------------------------------ */
+
+renderStep4Left = function () {
+    const q = state.quote || computeQuote(state.receipt, state.client, state.params, state.overrides);
+    state.quote = q;
+
+    return `
+    <div class="card__title">Generar cotización</div>
+    <div class="help">Revisa el documento y genera el PDF cuando esté listo.</div>
+
+    <div class="wizard-actions" style="justify-content:space-between; margin-top:12px">
+      <button class="btn" id="btnBack4"><i data-lucide="arrow-left"></i>Volver</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end">
+        <button class="btn" id="btnExport"><i data-lucide="download"></i>Descargar PDF</button>
+        <button class="btn" id="btnGoCashvoltFromQuote"><i data-lucide="cloud-upload"></i>CashVolt</button>
+        <button class="btn btn--primary" id="btnSaveQuote"><i data-lucide="save"></i>Guardar cotización</button>
+        <button class="btn btn--success" id="btnConfirmProject"><i data-lucide="check"></i>Confirmar proyecto</button>
+      </div>
+    </div>
+
+    <div class="help" id="msg4" style="margin-top:10px"></div>
+  `;
+};
+
+wireStep4 = function () {
+    if (!state.receipt) {
+        gotoStep(1);
+        return;
+    }
+
+    $('#btnBack4')?.addEventListener('click', () => gotoStep(4));
+    $('#btnExport')?.addEventListener('click', exportPdf);
+
+    $('#btnGoCashvoltFromQuote')?.addEventListener('click', () => {
+        window.open('https://cashvolt.mx/public/login', '_blank');
+    });
+
+    $('#btnSaveQuote')?.addEventListener('click', () => {
+        try {
+            const q = persistQuote('Guardada');
+            toast({title: 'Cotización guardada', message: `Se agregó al historial (${q.id}).`, icon: 'save'});
+            $('#msg4').textContent = `Guardada como ${q.id}.`;
+            renderHistorialTable();
+        } catch (e) {
+            toast({title: 'No se pudo guardar', message: e?.message || 'Revisa los datos.', icon: 'x-circle'});
+        }
+    });
+
+    $('#btnConfirmProject')?.addEventListener('click', () => {
+        try {
+            const q = persistQuote('Confirmada');
+            const project = saveProjectFromQuote({...q, status: 'Confirmada'});
+            updateQuote(q.id, {status: 'Confirmada'});
+            toast({title: 'Proyecto confirmado', message: `Se agregó a Proyectos (${project.id}).`, icon: 'check'});
+            renderHistorialTable();
+            renderProyectosTable();
+            setRoute('proyectos');
+        } catch (e) {
+            toast({title: 'No se pudo confirmar', message: e?.message || 'Revisa los datos.', icon: 'x-circle'});
+        }
+    });
+
+    if (state.savedQuote?.id) {
+        $('#msg4').textContent = `Cotización: ${state.savedQuote.id}`;
+    }
+
+    renderExportDocChart({root: document});
+};
+
+/* ------------------------------
+   Si el usuario está dentro del cotizador, refrescar pantalla
+------------------------------ */
+
+if (state.route === 'cotizador') {
+    renderCotizadorRoute();
+}
+init();

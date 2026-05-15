@@ -1322,3 +1322,86 @@ button, input, select, textarea{
         grid-template-columns:1fr;
     }
 }
+
+/* =========================================================
+   SECOM - Wizard guiado de cotización V2
+   Pegar este bloque AL FINAL de styles.css
+   ========================================================= */
+
+.quote-wizard-panel,
+.quote-summary-panel{
+    border:1px solid rgba(96,165,250,0.18);
+    border-radius:16px;
+    padding:14px;
+    background:
+        linear-gradient(145deg, rgba(59,130,246,0.10), rgba(15,23,42,0.10)),
+        color-mix(in srgb, var(--card) 86%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    backdrop-filter: blur(14px);
+}
+
+.quote-summary-panel__title{
+    font-size:12px;
+    color:var(--muted);
+    font-weight:800;
+    text-transform:uppercase;
+    margin-bottom:8px;
+}
+
+.quote-kpi-grid{
+    gap:12px;
+}
+
+.quote-kpi-card{
+    border-color:rgba(96,165,250,0.18);
+    background:
+        radial-gradient(circle at top right, rgba(59,130,246,0.18), transparent 34%),
+        color-mix(in srgb, var(--card) 90%, transparent);
+}
+
+.energy-hero{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:14px;
+    margin-top:14px;
+}
+
+.energy-metric{
+    min-height:132px;
+    border:1px solid rgba(96,165,250,0.22);
+    border-radius:18px;
+    padding:18px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    background:
+        radial-gradient(circle at 16% 12%, rgba(96,165,250,0.24), transparent 30%),
+        linear-gradient(145deg, rgba(37,99,235,0.16), rgba(2,6,23,0.08)),
+        color-mix(in srgb, var(--card) 84%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 18px 40px rgba(0,0,0,0.18);
+}
+
+.energy-metric i,
+.energy-metric svg{
+    width:24px;
+    height:24px;
+    color:#60a5fa;
+}
+
+.energy-metric span{
+    color:var(--muted);
+    font-size:12px;
+    font-weight:800;
+    text-transform:uppercase;
+}
+
+.energy-metric b{
+    font-size:24px;
+    line-height:1.1;
+}
+
+@media (max-width: 980px){
+    .energy-hero{
+        grid-template-columns:1fr;
+    }
+}
