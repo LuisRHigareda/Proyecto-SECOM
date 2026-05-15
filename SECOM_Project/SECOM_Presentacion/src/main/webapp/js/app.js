@@ -383,8 +383,9 @@ function renderAllRoutes() {
 // ------------------------------
 
 function renderCotizadorRoute() {
+
     const root = $('#route-cotizador');
-    // Pantalla 1 (equivalente al menú de Tkinter)
+
     if (!state.selectedTariff) {
         root.innerHTML = renderTariffSelector();
         wireTariffSelector();
@@ -393,25 +394,42 @@ function renderCotizadorRoute() {
     }
 
     root.innerHTML = `
-    <div class="row" style="justify-content:space-between; align-items:center; gap:12px">
-      <div class="pill">
-        <span class="pill__dot"></span>
-        <span>Tarifa seleccionada:</span>&nbsp;<b>${escapeHtml(state.selectedTariff.label)}</b>
-      </div>
-      <button class="btn" id="btnChangeTarifa"><i data-lucide="repeat-2"></i>Cambiar</button>
-    </div>
+        <div class="wizard-shell">
 
-    ${renderTariffImpactBox(state.selectedTariff)}
+            <div class="wizard-header">
+                <div>
+                    <div class="wizard-title">
+                        Nueva cotización SECOM
+                    </div>
 
-    <div class="card card--flat" style="box-shadow:none; margin-top:12px">
-      <div class="stepper" id="stepper"></div>
-    </div>
+                    <div class="wizard-subtitle">
+                        Flujo guiado de cotización solar
+                    </div>
+                </div>
 
-    <div class="grid cols-2" style="margin-top:14px">
-      <div class="card" id="wizardLeft"></div>
-      <div class="card" id="wizardRight"></div>
-    </div>
-  `;
+                <div class="pill">
+                    <span class="pill__dot"></span>
+                    <span>Tarifa:</span>
+                    <b>${escapeHtml(state.selectedTariff.label)}</b>
+                </div>
+            </div>
+
+            ${renderTariffImpactBox(state.selectedTariff)}
+
+            <div class="card card--flat wizard-stepper-card">
+                <div class="stepper" id="stepper"></div>
+            </div>
+
+            <div class="wizard-grid">
+                <div id="wizardLeft"></div>
+                <div id="wizardRight"></div>
+            </div>
+
+        </div>
+    `;
+
+    buildStepper();
+    renderWizard();
 
     $('#btnChangeTarifa')?.addEventListener('click', () => {
         state.selectedTariff = null;
@@ -419,8 +437,7 @@ function renderCotizadorRoute() {
         renderCotizadorRoute();
     });
 
-    buildStepper();
-    renderWizard();
+    window.lucide?.createIcons();
 }
 
 function renderTariffSelector() {
@@ -655,54 +672,94 @@ function renderCashvoltTable() {
 
 function buildStepper() {
     const el = $('#stepper');
+
     const steps = [
         {n: 1, label: 'Recibo'},
-        {n: 2, label: 'Datos y sistema'},
-        {n: 3, label: 'Resumen'},
-        {n: 4, label: 'Exportar'},
+        {n: 2, label: 'Consumo'},
+        {n: 3, label: 'Pre-cálculo'},
+        {n: 4, label: 'Paquete'},
+        {n: 5, label: 'Generar'},
     ];
 
     el.innerHTML = steps.map((s, i) => {
-        const cls = s.n === state.wizardStep ? 'is-active' : (s.n < state.wizardStep ? 'is-done' : '');
-        const line = i < steps.length - 1 ? '<div class="stepper__line"></div>' : '';
+
+        const cls =
+            s.n === state.wizardStep
+                ? 'is-active'
+                : (s.n < state.wizardStep ? 'is-done' : '');
+
+        const line =
+            i < steps.length - 1
+                ? '<div class="stepper__line"></div>'
+                : '';
+
         return `
-      <div class="stepper__item ${cls}">
-        <div class="stepper__dot">${s.n}</div>
-        <div class="stepper__label">${s.label}</div>
-      </div>
-      ${line}
-    `;
+        <div class="stepper__item ${cls}">
+            <div class="stepper__dot">
+                ${s.n}
+            </div>
+
+            <div class="stepper__label">
+                ${s.label}
+            </div>
+        </div>
+
+        ${line}
+        `;
     }).join('');
+
     window.lucide?.createIcons();
 }
 
 function gotoStep(n) {
-    state.wizardStep = n;
+    state.wizardStep = Number(n);
     buildStepper();
     renderWizard();
 }
-
 function renderWizard() {
     const left = $('#wizardLeft');
     const right = $('#wizardRight');
+
+    if (!left || !right) return;
 
     if (state.wizardStep === 1) {
         left.innerHTML = renderStep1Left();
         right.innerHTML = renderStep1Right();
         wireStep1();
+
     } else if (state.wizardStep === 2) {
-        left.innerHTML = renderStep2Left();
-        right.innerHTML = renderStep2Right();
-        wireStep2();
+        left.innerHTML = secomV2RenderConsumptionLeft();
+        right.innerHTML = secomV2RenderConsumptionRight();
+        secomV2WireConsumption();
+
     } else if (state.wizardStep === 3) {
-        left.innerHTML = renderStep3Left();
-        right.innerHTML = renderStep3Right();
-        wireStep3();
-    } else {
+        left.innerHTML = secomV2RenderPrecalcLeft();
+        right.innerHTML = secomV2RenderPrecalcRight();
+
+        // Botones directos del paso 3
+        const btnBack = left.querySelector('#btnBackPrecalc');
+        const btnNext = left.querySelector('#btnNextPrecalc');
+
+        btnBack?.addEventListener('click', () => {
+            gotoStep(2);
+        });
+
+        btnNext?.addEventListener('click', () => {
+            state.quote = state.quote || currentStep2Quote();
+            gotoStep(4);
+        });
+
+    } else if (state.wizardStep === 4) {
+        left.innerHTML = secomV2RenderPackageLeft();
+        right.innerHTML = secomV2RenderPackageRight();
+        secomV2WirePackage();
+
+    } else if (state.wizardStep === 5) {
         left.innerHTML = renderStep4Left();
         right.innerHTML = renderStep4Right();
         wireStep4();
     }
+
     window.lucide?.createIcons();
 }
 
@@ -1153,328 +1210,10 @@ function applyPackagePreset(packageKey) {
 // Step 2
 // ------------------------------
 
-function renderStep2Left() {
-    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
-    const ajusteKwh = Number(r?.ajusteConsumo?.kwhMes || 0);
-    const ajusteNota = (r?.ajusteConsumo?.nota || '').trim();
-    const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
-    const impuestosPct = Number.isFinite(Number(r?.impuestosPct)) ? Number(r.impuestosPct) : (state.preferences?.quoteDefaults?.taxPct || 0.16);
-    const q = currentStep2Quote();
-    const panelesShown = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? Number(state.overrides.paneles) : q.paneles;
-    const panelesManualValue = (state.overrides?.paneles && Number(state.overrides.paneles) > 0) ? String(state.overrides.paneles) : '';
-    return `
-    <div class="card__title">Datos del recibo y configuración del sistema</div>
-    <div class="help">Aquí puedes corregir nombre, dirección y número de servicio detectados, además de definir el sistema y el paquete de insumos antes de generar la cotización.</div>
 
-    <div class="card__subtitle" style="margin-top:12px">Campos críticos del recibo</div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>No. de servicio</label>
-        <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
-      </div>
-      <div class="field">
-        <label>Tarifa</label>
-        <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || '')}" />
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Titular del recibo</label>
-        <input id="rNombre" placeholder="Nombre detectado del recibo" value="${escapeAttr(r?.nombre || '')}" />
-      </div>
-      <div class="field">
-        <label>Estado (abreviatura)</label>
-        <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:10px">
-      <label>Dirección del suministro</label>
-      <textarea id="rDireccion" rows="3" placeholder="Dirección detectada del recibo">${escapeHtml(r?.direccion || '')}</textarea>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field" style="flex:1.4">
-        <label>Periodo facturado</label>
-        <input id="rPeriodo" placeholder="DD MMM AA - DD MMM AA" value="${escapeAttr(r?.periodo?.raw || '')}" />
-      </div>
-      <div class="field" style="flex:1">
-        <label>Tipo de periodo</label>
-        <select id="rTipoPeriodo">
-          <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>Mensual</option>
-          <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>Bimestral</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Consumo del periodo (kWh)</label>
-        <input id="rConsumo" type="number" min="0" step="1" value="${escapeAttr(String(r?.consumoPeriodo || 0))}" />
-      </div>
-      <div class="field">
-        <label>Total a pagar (MXN)</label>
-        <input id="rTotal" type="number" min="0" step="1" value="${escapeAttr(String(r?.totalAPagar || 0))}" />
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>No. hilos</label>
-        <input id="rHilos" placeholder="1" value="${escapeAttr(String(r?.hilos || ''))}" />
-      </div>
-      <div class="field">
-        <label>Ajuste de consumo (kWh/mes)</label>
-        <input id="rAjusteKwh" type="number" step="1" value="${escapeAttr(String(ajusteKwh))}" />
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:10px">
-      <label>Nota del ajuste de consumo</label>
-      <textarea id="rAjusteNota" rows="2" placeholder="Ejemplo: Se considera una ampliación de carga futura.">${escapeHtml(ajusteNota)}</textarea>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Datos del cliente</div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Nombre del cliente</label>
-        <input id="cNombre" placeholder="Nombre del cliente" value="${escapeAttr(state.client.nombre || r?.nombre || '')}" />
-      </div>
-      <div class="field">
-        <label>Teléfono</label>
-        <input id="cTel" placeholder="(###) ### ####" value="${escapeAttr(state.client.telefono)}" />
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Correo</label>
-        <input id="cEmail" placeholder="cliente@correo.com" value="${escapeAttr(state.client.email)}" />
-      </div>
-      <div class="field">
-        <label>Tipo seleccionado</label>
-        <select id="rSelectedTariff">
-          <option value="">Selecciona un tipo…</option>
-          ${TARIFFS.filter(t => t.kind !== 'cashvolt').map(t => `<option value="${escapeAttr(t.key)}" ${state.selectedTariff?.key === t.key ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
-    ${renderTariffImpactBox(state.selectedTariff, q, 'tariffImpactData')}
-
-    <div class="field" style="margin-top:10px">
-      <label>Dirección de instalación / contacto</label>
-      <textarea id="cDir" rows="3" placeholder="Dirección donde se instalará el sistema">${escapeHtml(state.client.direccion || r?.direccion || '')}</textarea>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Edición del sistema</div>
-
-    <div class="grid cols-3" style="margin-top:10px">
-      <div class="field">
-        <label>Producción promedio (kWh/kWp-mes)</label>
-        <input id="pYield" type="number" min="60" max="220" step="1" value="${escapeAttr(String(state.params.yieldKwhPerKwpMonth))}" />
-      </div>
-      <div class="field">
-        <label>Panel (W)</label>
-        <input id="pPanel" type="number" min="350" max="700" step="10" value="${escapeAttr(String(state.params.panelWatts))}" />
-      </div>
-      <div class="field">
-        <label>Costo por kWp (MXN)</label>
-        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${escapeAttr(String(state.params.costPerKwp))}" />
-      </div>
-    </div>
-
-    <div class="grid cols-3" style="margin-top:10px">
-      <div class="field">
-        <label>Contingencia</label>
-        <input id="pCont" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(state.params.contingencyPct))}" />
-      </div>
-      <div class="field">
-        <label>Paneles (manual, opcional)</label>
-        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(panelesManualValue)}" placeholder="Auto: ${escapeAttr(String(panelesShown))}" />
-      </div>
-      <div class="field">
-        <label>Modelo de panel</label>
-        <input id="mPanelModelo" placeholder="Ej. JA Solar 550 W" value="${escapeAttr(state.quoteMeta.panelModelo || '')}" />
-      </div>
-    </div>
-
-    <div class="grid cols-3" style="margin-top:10px">
-      <div class="field">
-        <label>Dimensiones del panel</label>
-        <input id="mPanelDim" placeholder="Ej. 2.27 × 1.13 m" value="${escapeAttr(state.quoteMeta.panelDimensiones || '')}" />
-      </div>
-      <div class="field">
-        <label>Tipo de techo</label>
-        <select id="mTecho">
-          ${['No especificado', 'Losa', 'Lámina', 'Teja', 'Otro'].map(x => `<option ${x === state.quoteMeta.tipoTecho ? 'selected' : ''}>${x}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label>Sombras</label>
-        <select id="mSombras">
-          <option value="0" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0 ? 'selected' : ''}>Ninguna (0%)</option>
-          <option value="0.10" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.10 ? 'selected' : ''}>Baja (10%)</option>
-          <option value="0.20" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.20 ? 'selected' : ''}>Media (20%)</option>
-          <option value="0.35" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.35 ? 'selected' : ''}>Alta (35%)</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="field" style="flex:1.2">
-        <label>Modelo de inversor</label>
-        <input id="mInversor" placeholder="Ej. Huawei SUN2000" value="${escapeAttr(state.quoteMeta.inversorModelo || '')}" />
-      </div>
-      <div class="field" style="flex:1">
-        <label>Consumo mensual manual (opcional)</label>
-        <input id="oConsumoMensual" type="number" min="0" step="1" value="${escapeAttr(String(state.overrides?.consumoMensual || ''))}" placeholder="Auto: ${escapeAttr(String(q.consumoMensual || 0))} kWh/mes" />
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:10px">
-      <label>Consideraciones físicas / notas</label>
-      <textarea id="mNotasFisicas" rows="3" placeholder="Área disponible, orientación, sombras y observaciones del techo.">${escapeHtml(state.quoteMeta.notasFisicas || '')}</textarea>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Paquetes de insumos</div>
-    <div class="help">Al seleccionar un paquete se cargarán insumos sugeridos y precios por defecto. Después puedes editar cualquier partida.</div>
-
-    <div class="package-grid" style="margin-top:10px">
-      ${renderPackageCards()}
-    </div>
-
-    <div class="row" style="justify-content:space-between; margin-top:10px; align-items:flex-start">
-      <div class="help" id="packageLabel">${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado.'}</div>
-      <button class="btn" id="btnClearPackage"><i data-lucide="eraser"></i>Quitar paquete</button>
-    </div>
-
-    <div class="package-preview" id="packagePreview" style="margin-top:10px">${renderPackagePreviewItems()}</div>
-
-    <div class="card__subtitle" style="margin-top:14px">Insumos editables</div>
-    <div class="help">Puedes agregar más partidas, cambiar cantidades, precios o quitar insumos del paquete.</div>
-
-    <div class="row" style="margin-top:10px; align-items:flex-end">
-      <div class="field" style="flex:2">
-        <label>Agregar desde catálogo</label>
-        <select id="insCatalog">
-          <option value="">Selecciona un insumo…</option>
-          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio)}</option>`).join('')}
-        </select>
-      </div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap">
-        <button class="btn" id="btnAddCatalog"><i data-lucide="plus"></i>Agregar</button>
-        <button class="btn" id="btnAddManual"><i data-lucide="edit-3"></i>Agregar manual</button>
-      </div>
-    </div>
-
-    <div style="overflow:auto; margin-top:10px">
-      <table class="table table--tight" id="insTable">
-        <thead>
-          <tr>
-            <th style="min-width:140px">CÓDIGO</th>
-            <th style="min-width:280px">DESCRIPCIÓN</th>
-            <th style="min-width:120px">CANTIDAD</th>
-            <th style="min-width:120px">UNIDAD</th>
-            <th style="min-width:140px">PRECIO</th>
-            <th style="min-width:140px">TOTAL</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${insumos.length ? insumos.map((it, i) => renderInsumoRow(it, i)).join('') : `
-            <tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>
-          `}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="insumos-summary" style="margin-top:10px">
-      <div class="insumos-summary__row"><span>Subtotal</span><b id="insSubtotal">—</b></div>
-      <div class="insumos-summary__row">
-        <span>Impuestos (IVA %)</span>
-        <div style="display:flex; align-items:center; gap:10px">
-          <input id="insTaxPct" class="insumos-summary__tax" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(Math.round(impuestosPct * 100 * 10) / 10))}" />
-          <b id="insTaxes">—</b>
-        </div>
-      </div>
-      <div class="insumos-summary__row insumos-summary__row--total"><span>Total</span><b id="insTotal">—</b></div>
-    </div>
-
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBack2"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNext2"><i data-lucide="arrow-right"></i>Continuar</button>
-    </div>
-
-    <div class="help" id="msg2" style="margin-top:10px"></div>
-  `;
-}
 
 function renderStep2Right() {
-    const r = state.receipt || {};
-    const val = validateReceiptAgainstSelection(r, state.selectedTariff);
-    const q = currentStep2Quote();
-    const alerts = getStep2Alerts();
-    return `
-    <div class="card__title">Resumen de revisión</div>
-    <div class="help">Verifica que los campos clave se hayan leído correctamente antes de continuar.</div>
-
-    <div class="row" style="margin-top:10px">
-      <div class="kpi" style="flex:1">
-        <div class="kpi__label">Tipo seleccionado</div>
-        <div class="kpi__value" style="font-size:13px">${escapeHtml(state.selectedTariff?.label || '—')}</div>
-      </div>
-      <div class="kpi" style="flex:1">
-        <div class="kpi__label">Validación</div>
-        <div class="kpi__value" style="font-size:13px">${val.ok ? 'Correcta' : 'Revisar'}</div>
-      </div>
-    </div>
-
-    <div class="help" style="margin-top:8px">${escapeHtml(val.message)}</div>
-
-    <div class="review-panel" style="margin-top:12px">
-      <div class="review-row"><span>Titular del recibo</span><b id="step2Holder">${escapeHtml(r?.nombre || '—')}</b></div>
-      <div class="review-row"><span>No. de servicio</span><b id="step2Servicio">${escapeHtml(r?.servicio || '—')}</b></div>
-      <div class="review-row"><span>Dirección del suministro</span><b id="step2Address">${escapeHtml(r?.direccion || '—')}</b></div>
-      <div class="review-row"><span>Periodo</span><b id="step2Periodo">${escapeHtml(r?.periodo?.raw || '—')}</b></div>
-      <div class="review-row"><span>Total a pagar</span><b id="step2Total">${r?.totalAPagar ? formatCurrencyMXN(r.totalAPagar) : '—'}</b></div>
-      <div class="review-row"><span>Impacto de tarifa</span><b id="step2TariffFormula">${escapeHtml(getTariffImpact(state.selectedTariff, q).formula)}</b></div>
-      <div class="review-row"><span>Paquete de insumos</span><b id="step2Package">${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado'}</b></div>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Pre-cotización</div>
-    <div class="grid cols-2" style="margin-top:10px">
-      <div class="kpi">
-        <div class="kpi__label">Potencia estimada</div>
-        <div class="kpi__value" id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Paneles</div>
-        <div class="kpi__value" id="step2Panels">${formatNumber(q.paneles || 0)} paneles</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Ahorro mensual</div>
-        <div class="kpi__value" id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Consumo mensual usado</div>
-        <div class="kpi__value" id="step2ConsumoMensual">${state.overrides?.consumoMensual ? `${formatNumber(state.overrides.consumoMensual)} kWh/mes (manual)` : `${formatNumber(q.consumoMensual || 0)} kWh/mes`}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Total de cotización</div>
-        <div class="kpi__value" id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</div>
-      </div>
-    </div>
-
-    ${renderTariffComparisonTable(state.selectedTariff)}
-
-    <div class="card__subtitle" style="margin-top:14px">Campos por revisar</div>
-    <div id="step2Alerts" style="margin-top:8px">
-      ${alerts.length ? alerts.map(msg => `<div class="review-alert">${escapeHtml(msg)}</div>`).join('') : '<div class="review-ok">Los campos clave del recibo ya quedaron listos para cotizar.</div>'}
-    </div>
-  `;
+    return secomV2RenderConsumptionRight();
 }
 
 // ------------------------------
@@ -1667,163 +1406,21 @@ function setupInsumosCrud() {
     // Asegurar render inicial de filas con íconos
     renderBody();
 }
-
 function wireStep2() {
-    if (!state.receipt) {
-        gotoStep(1);
-        return;
-    }
-
-    $('#btnBack2').addEventListener('click', () => gotoStep(1));
-
-    const syncAndRefresh = debounce(() => {
-        syncStep2State();
-        refreshStep2Summary();
-    }, 120);
-
-    [
-        '#rServicio', '#rTarifa', '#rNombre', '#rDireccion', '#rPeriodo', '#rTipoPeriodo', '#rConsumo', '#rTotal', '#rHilos', '#rEstado',
-        '#rAjusteKwh', '#rAjusteNota', '#cNombre', '#cTel', '#cEmail', '#cDir', '#rSelectedTariff',
-        '#pYield', '#pPanel', '#pCost', '#pCont', '#oConsumoMensual', '#oPaneles', '#mPanelModelo', '#mPanelDim', '#mTecho', '#mSombras', '#mInversor', '#mNotasFisicas'
-    ].forEach(id => {
-        $(id)?.addEventListener('input', syncAndRefresh);
-        $(id)?.addEventListener('change', syncAndRefresh);
-    });
-
-    $$('#route-cotizador [data-package]').forEach(btn => {
-        btn.addEventListener('click', () => applyPackagePreset(btn.dataset.package));
-    });
-
-    $('#btnClearPackage')?.addEventListener('click', () => {
-        state.selectedPackage = '';
-        if (state.receipt?.instalacion)
-            state.receipt.instalacion.paqueteSeleccionado = '';
-        renderWizard();
-        toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
-    });
-
-    $('#btnNext2').addEventListener('click', () => {
-        const q = syncStep2State();
-        const msg = $('#msg2');
-
-        if (!state.client.nombre) {
-            msg.textContent = 'Por favor, captura el nombre del cliente.';
-            toast({title: 'Falta información', message: 'El nombre del cliente es obligatorio.', icon: 'alert-triangle'});
-            return;
-        }
-
-        if (!state.receipt.servicio) {
-            msg.textContent = 'Por favor, captura el número de servicio del recibo.';
-            toast({title: 'Dato crítico faltante', message: 'El número de servicio es obligatorio para continuar.', icon: 'alert-triangle'});
-            return;
-        }
-
-        msg.textContent = '';
-        state.quote = q;
-        gotoStep(3);
-    });
-
-    setupInsumosCrud();
-    refreshStep2Summary();
+    secomV2WireConsumption();
 }
-
 // ------------------------------
 // Step 3
 // ------------------------------
-
 function renderStep3Left() {
-    const q = state.quote || currentStep2Quote();
-    state.quote = q;
-    const packageLabel = state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete';
-
-    return `
-    <div class="card__title">Resumen técnico y económico</div>
-    <div class="help">Esta vista consolida la información corregida del recibo, el sistema propuesto y los montos estimados. Si necesitas cambiar algo, regresa al paso anterior.</div>
-
-    <div class="grid cols-3" style="margin-top:12px">
-      <div class="kpi">
-        <div class="kpi__label">Potencia instalada</div>
-        <div class="kpi__value">${q.kwp.toFixed(2)} kWp</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Paneles</div>
-        <div class="kpi__value">${q.paneles}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Inversión</div>
-        <div class="kpi__value">${formatCurrencyMXN(q.inversion)}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Ahorro mensual</div>
-        <div class="kpi__value">${formatCurrencyMXN(q.ahorroMensual)}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Retorno</div>
-        <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Producción anual</div>
-        <div class="kpi__value">${formatNumber(q.produccionAnual)} kWh</div>
-      </div>
-    </div>
-
-    <div class="review-panel" style="margin-top:14px">
-      <div class="review-row"><span>Titular</span><b>${escapeHtml(state.receipt?.nombre || '—')}</b></div>
-      <div class="review-row"><span>Cliente</span><b>${escapeHtml(state.client?.nombre || '—')}</b></div>
-      <div class="review-row"><span>No. de servicio</span><b>${escapeHtml(state.receipt?.servicio || '—')}</b></div>
-      <div class="review-row"><span>Dirección</span><b>${escapeHtml(state.receipt?.direccion || state.client?.direccion || '—')}</b></div>
-      <div class="review-row"><span>Panel</span><b>${escapeHtml(state.quoteMeta?.panelModelo || 'Panel fotovoltaico')}</b></div>
-      <div class="review-row"><span>Inversor</span><b>${escapeHtml(state.quoteMeta?.inversorModelo || 'Por definir')}</b></div>
-      <div class="review-row"><span>Techo / sombras</span><b>${escapeHtml(state.quoteMeta?.tipoTecho || 'No especificado')} · ${escapeHtml(state.quoteMeta?.sombras || 'Sin dato')}</b></div>
-      <div class="review-row"><span>Paquete</span><b>${escapeHtml(packageLabel)}</b></div>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Observaciones del sistema</div>
-    <div class="help">${escapeHtml(state.quoteMeta?.notasFisicas || 'Sin observaciones adicionales.')}</div>
-
-    <div class="wizard-actions" style="justify-content:space-between; margin-top:16px">
-      <button class="btn" id="btnBack3"><i data-lucide="arrow-left"></i>Volver a editar</button>
-      <button class="btn btn--success" id="btnNext3"><i data-lucide="arrow-right"></i>Preparar formato final</button>
-    </div>
-  `;
+    return secomV2RenderPrecalcLeft();
 }
 
 function renderStep3Right() {
-    return `
-    <div class="card__title">Consumo y pagos</div>
-    <div class="help">Histórico detectado en el recibo.</div>
-
-    <div style="margin-top:12px">
-      <canvas id="chart" height="180"></canvas>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:12px">Detalle</div>
-    <div style="overflow:auto">
-      <table class="table" id="histTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Consumo (kWh)</th>
-            <th>Pago (MXN)</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  `;
+    return secomV2RenderPrecalcRight();
 }
-
 function wireStep3() {
-    if (!state.receipt) {
-        gotoStep(1);
-        return;
-    }
-
-    $('#btnBack3').addEventListener('click', () => gotoStep(2));
-    $('#btnNext3').addEventListener('click', () => gotoStep(4));
-
-    renderHistoryTable();
-    renderChart();
+    secomV2WirePrecalc();
 }
 
 function renderHistoryTable() {
@@ -4898,99 +4495,222 @@ wireStep1 = function () {
 /* ------------------------------
    Paso 2: Consumo
 ------------------------------ */
-
 function secomV2RenderConsumptionLeft() {
+
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const q = currentStep2Quote();
-    const hist = (r?.historial || []).slice(-12);
-    const daily = Number(q.consumoMensual || 0) / 30;
+
+    const promedioMensual = Number(q?.consumoMensual || 0);
+    const promedioDiario = Number((promedioMensual * 1000) / 30 || 0);
+
+    const cfeMensual = Number(
+        q?.reciboMensual ||
+        r?.totalAPagar ||
+        0
+    );
+
+    const promedioMensualDinero = cfeMensual;
+    const promedioAnualDinero = cfeMensual * 12;
+
+    const ajusteNota = r?.ajusteConsumo?.nota || '';
 
     return `
-    <div class="card__title">Información de consumo</div>
-    <div class="help">Revisa únicamente consumo, promedio mensual, promedio diario y monto promedio del recibo.</div>
 
-    <div class="grid cols-4 quote-kpi-grid" style="margin-top:12px">
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Promedio mensual</div>
-        <div class="kpi__value">${formatNumber(q.consumoMensual || 0)} kWh</div>
-      </div>
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Consumo diario</div>
-        <div class="kpi__value">${formatNumber(daily)} kWh</div>
-      </div>
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Recibo promedio</div>
-        <div class="kpi__value">${formatCurrencyMXN(r.totalAPagar || 0)}</div>
-      </div>
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Periodo</div>
-        <div class="kpi__value">${escapeHtml(r.tipoPeriodo || state.selectedTariff?.periodo || '—')}</div>
-      </div>
-    </div>
+    <div class="card consumption-card">
 
-    <div class="row" style="margin-top:14px">
-      <div class="field">
-        <label>Consumo del periodo (kWh)</label>
-        <input id="rConsumo" type="number" min="0" step="1" value="${escapeAttr(String(r?.consumoPeriodo || 0))}" />
-      </div>
-      <div class="field">
-        <label>Total a pagar (MXN)</label>
-        <input id="rTotal" type="number" min="0" step="1" value="${escapeAttr(String(r?.totalAPagar || 0))}" />
-      </div>
-    </div>
+        <div class="consumption-header">
+            <div>
+                <div class="card__title">
+                    Información de consumo
+                </div>
 
-    <div class="row" style="margin-top:10px">
-      <div class="field">
-        <label>Ajuste de consumo (kWh/mes)</label>
-        <input id="rAjusteKwh" type="number" step="1" value="${escapeAttr(String(r?.ajusteConsumo?.kwhMes || 0))}" />
-      </div>
-      <div class="field">
-        <label>Nota del ajuste</label>
-        <input id="rAjusteNota" value="${escapeAttr(r?.ajusteConsumo?.nota || '')}" placeholder="Carga futura, ampliación, etc." />
-      </div>
-    </div>
+                <div class="help">
+                    Analiza el consumo energético detectado del recibo antes del pre-cálculo.
+                </div>
+            </div>
+        </div>
 
-    <div class="card__subtitle" style="margin-top:16px">Historial de consumo</div>
-    <div style="overflow:auto; margin-top:10px">
-      <table class="table table--tight">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Consumo (kWh)</th>
-            <th>Pago (MXN)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${hist.length ? hist.map((h, i) => `
-            <tr>
-              <td>${i + 1}</td>
-              <td>${formatNumber(h.kwh || 0)}</td>
-              <td>${formatCurrencyMXN(h.pago || 0)}</td>
-            </tr>
-          `).join('') : `
-            <tr><td colspan="3" style="color:var(--muted)">Sin datos históricos detectados.</td></tr>
-          `}
-        </tbody>
-      </table>
-    </div>
+        <div class="consumption-kpi-grid">
 
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBackConsumption"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNextConsumption"><i data-lucide="arrow-right"></i>Continuar</button>
+            <div class="consumption-kpi consumption-kpi--blue">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="zap"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    Promedio mensual
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${formatNumberMX(promedioMensual)}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    kWh/mes
+                </div>
+            </div>
+
+            <div class="consumption-kpi consumption-kpi--purple">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="calendar-days"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    Promedio diario
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${formatNumberMX(promedioDiario)}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    W/día
+                </div>
+            </div>
+
+            <div class="consumption-kpi consumption-kpi--green">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="dollar-sign"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    CFE mensual
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${formatCurrencyMXN(cfeMensual)}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    MXN/mes
+                </div>
+            </div>
+
+            <div class="consumption-kpi consumption-kpi--blue">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="receipt"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    Promedio $ consumo mensual
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${formatCurrencyMXN(promedioMensualDinero)}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    MXN/mes
+                </div>
+            </div>
+
+            <div class="consumption-kpi consumption-kpi--purple">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="trending-up"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    Promedio $ consumo anual
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${formatCurrencyMXN(promedioAnualDinero)}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    MXN/año
+                </div>
+            </div>
+
+            <div class="consumption-kpi consumption-kpi--green">
+                <div class="consumption-kpi__icon">
+                    <i data-lucide="calendar"></i>
+                </div>
+
+                <div class="consumption-kpi__label">
+                    Periodo
+                </div>
+
+                <div class="consumption-kpi__value">
+                    ${escapeHtml(r?.tipoPeriodo || 'Mensual')}
+                </div>
+
+                <div class="consumption-kpi__unit">
+                    tipo de recibo
+                </div>
+            </div>
+
+        </div>
+
+        <div class="field" style="margin-top:20px">
+            <label>Notas</label>
+
+            <textarea
+                id="rAjusteNota"
+                rows="2"
+                placeholder="Carga futura, ampliación, crecimiento del consumo, observaciones, etc."
+            >${escapeHtml(ajusteNota)}</textarea>
+        </div>
+
+        <div class="wizard-actions"
+             style="justify-content:space-between; margin-top:20px">
+
+            <button class="btn" id="btnBack2">
+                <i data-lucide="arrow-left"></i>
+                Volver
+            </button>
+
+            <button class="btn btn--success" id="btnNext2">
+                <i data-lucide="arrow-right"></i>
+                Continuar
+            </button>
+
+        </div>
+
     </div>
-  `;
+    `;
 }
-
 function secomV2RenderConsumptionRight() {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const hist = (r?.historial || []).slice(-12);
+
     return `
     <div class="card__title">Tendencia de consumo</div>
-    <div class="help">Vista rápida del histórico detectado para confirmar que los consumos tengan sentido.</div>
+    <div class="help">Gráfica y lista del historial detectado en el recibo.</div>
 
     <div style="margin-top:12px; min-height:260px">
       <canvas id="chart" height="220"></canvas>
     </div>
 
-    ${renderTariffImpactBox(state.selectedTariff, currentStep2Quote())}
+    <div class="card__subtitle" style="margin-top:16px">Lista de consumos</div>
+
+    <div style="overflow:auto; margin-top:10px; max-height:360px">
+      <table class="table table--tight consumption-history-table">
+        <thead>
+          <tr>
+            <th>Periodo</th>
+            <th>Consumo (kWh)</th>
+            <th>Pago (MXN)</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${hist.length ? hist.map((h, i) => `
+            <tr>
+              <td>P${i + 1}</td>
+              <td><b>${formatNumber(h.kwh || 0)}</b></td>
+              <td>${formatCurrencyMXN(h.pago || 0)}</td>
+            </tr>
+          `).join('') : `
+            <tr>
+              <td colspan="3" style="color:var(--muted)">
+                Sin datos históricos detectados.
+              </td>
+            </tr>
+          `}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -5000,133 +4720,194 @@ function secomV2WireConsumption() {
         return;
     }
 
-    $('#btnBackConsumption')?.addEventListener('click', () => gotoStep(1));
+    $('#btnBack2')?.addEventListener('click', () => {
+        gotoStep(1);
+    });
 
-    $('#btnNextConsumption')?.addEventListener('click', () => {
+    $('#btnNext2')?.addEventListener('click', () => {
         secomV2SyncConsumption();
         gotoStep(3);
     });
 
-    ['#rConsumo', '#rTotal', '#rAjusteKwh', '#rAjusteNota'].forEach(id => {
-        $(id)?.addEventListener('input', debounce(() => {
-            secomV2SyncConsumption();
-            renderWizard();
-        }, 180));
-    });
+    $('#rAjusteNota')?.addEventListener('input', debounce(() => {
+        if (!state.receipt.ajusteConsumo) {
+            state.receipt.ajusteConsumo = {};
+        }
+
+        state.receipt.ajusteConsumo.nota = $('#rAjusteNota').value.trim();
+    }, 120));
 
     renderChart();
 }
-
-/* ------------------------------
-   Paso 3: Pre-cálculo
------------------------------- */
-
 function secomV2RenderPrecalcLeft() {
-    const q = currentStep2Quote();
-    const requiredKwp = Number(q.consumoMensual || 0) / Math.max(1, Number(q.yieldEfectivo || state.params.yieldKwhPerKwpMonth || 135));
-    const daily = Number(q.consumoMensual || 0) / 30;
+    const q = state.quote || currentStep2Quote();
+    state.quote = q;
+
+    const consumoMensual = Number(q.consumoMensual || 0);
+    const produccionMensual = Number(q.produccionMensual || 0);
+    const produccionDiaria = produccionMensual > 0 ? produccionMensual / 30 : 0;
+    const consumoDiario = consumoMensual > 0 ? consumoMensual / 30 : 0;
+
+    const kwRequeridos = Number(q.kwp || 0);
+    const kwRecomendados = kwRequeridos > 0 ? kwRequeridos * 1.1 : 0;
 
     return `
     <div class="card__title">Pre-cálculo energético</div>
-    <div class="help">Resultado técnico previo a seleccionar paquete o productos. La cobertura se mostrará hasta elegir productos.</div>
+
+    <div class="help">
+      Esta sección muestra la potencia requerida y recomendada antes de seleccionar paquetes o productos.
+    </div>
 
     <div class="energy-hero">
-      <div class="energy-metric">
-        <i data-lucide="zap"></i>
-        <span>kW requeridos</span>
-        <b>${requiredKwp.toFixed(2)} kWp</b>
+
+      <div class="energy-kpi energy-kpi--blue">
+        <div class="energy-kpi__icon">
+          <span class="energy-kpi__iconText">⚡</span>
+        </div>
+
+        <div class="energy-kpi__eyebrow">
+          CAPACIDAD REQUERIDA
+        </div>
+
+        <div class="energy-kpi__title">
+          Tamaño del sistema
+        </div>
+
+        <div class="energy-kpi__value">
+          ${kwRequeridos.toFixed(2)}
+          <span>kWp</span>
+        </div>
       </div>
-      <div class="energy-metric">
-        <i data-lucide="sun"></i>
-        <span>kW recomendados</span>
+
+      <div class="energy-kpi energy-kpi--purple">
+        <div class="energy-kpi__icon">
+          <span class="energy-kpi__iconText">☀</span>
+        </div>
+
+        <div class="energy-kpi__eyebrow">
+          CAPACIDAD RECOMENDADA
+        </div>
+
+        <div class="energy-kpi__title">
+          Tamaño óptimo
+        </div>
+
+        <div class="energy-kpi__value">
+          ${kwRecomendados.toFixed(2)}
+          <span>kWp</span>
+        </div>
+      </div>
+
+      <div class="energy-kpi energy-kpi--green">
+        <div class="energy-kpi__icon">
+          <span class="energy-kpi__iconText">↗</span>
+        </div>
+
+        <div class="energy-kpi__eyebrow">
+          PRODUCCIÓN ESTIMADA
+        </div>
+
+        <div class="energy-kpi__title">
+          Energía generada
+        </div>
+
+        <div class="energy-kpi__value">
+          ${formatNumber(produccionMensual)}
+          <span>kWh</span>
+        </div>
+      </div>
+
+      <div class="energy-kpi energy-kpi--orange">
+        <div class="energy-kpi__icon">
+          <span class="energy-kpi__iconText">▭</span>
+        </div>
+
+        <div class="energy-kpi__eyebrow">
+          CONSUMO DIARIO
+        </div>
+
+        <div class="energy-kpi__title">
+          Patrón de uso
+        </div>
+
+        <div class="energy-kpi__value">
+          ${formatNumber(consumoDiario)}
+          <span>kWh/día</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="review-panel" style="margin-top:16px">
+
+      <div class="review-row">
+        <span>Producción diaria estimada</span>
+        <b>${formatNumber(produccionDiaria)} kWh/día</b>
+      </div>
+
+      <div class="review-row">
+        <span>Consumo mensual usado</span>
+        <b>${formatNumber(consumoMensual)} kWh/mes</b>
+      </div>
+
+      <div class="review-row">
+        <span>Paneles sugeridos</span>
+        <b>${formatNumber(q.paneles || 0)} paneles</b>
+      </div>
+
+      <div class="review-row">
+        <span>Potencia instalada preliminar</span>
         <b>${Number(q.kwp || 0).toFixed(2)} kWp</b>
       </div>
-      <div class="energy-metric">
-        <i data-lucide="activity"></i>
-        <span>Producción estimada</span>
-        <b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b>
-      </div>
-      <div class="energy-metric">
-        <i data-lucide="gauge"></i>
-        <span>Consumo diario</span>
-        <b>${formatNumber(daily)} kWh/día</b>
-      </div>
+
     </div>
 
-    <div class="grid cols-3" style="margin-top:14px">
-      <div class="field">
-        <label>Producción promedio (kWh/kWp-mes)</label>
-        <input id="pYield" type="number" min="60" max="220" step="1" value="${escapeAttr(String(state.params.yieldKwhPerKwpMonth))}" />
-      </div>
-      <div class="field">
-        <label>Panel (W)</label>
-        <input id="pPanel" type="number" min="350" max="700" step="10" value="${escapeAttr(String(state.params.panelWatts))}" />
-      </div>
-      <div class="field">
-        <label>Costo por kWp (MXN)</label>
-        <input id="pCost" type="number" min="12000" max="60000" step="500" value="${escapeAttr(String(state.params.costPerKwp))}" />
-      </div>
-      <div class="field">
-        <label>Contingencia</label>
-        <input id="pCont" type="number" min="0" max="0.30" step="0.01" value="${escapeAttr(String(state.params.contingencyPct))}" />
-      </div>
-      <div class="field">
-        <label>Paneles manuales opcional</label>
-        <input id="oPaneles" type="number" min="1" step="1" value="${escapeAttr(String(state.overrides?.paneles || ''))}" placeholder="Auto: ${escapeAttr(String(q.paneles || 0))}" />
-      </div>
-      <div class="field">
-        <label>Consumo mensual manual opcional</label>
-        <input id="oConsumoMensual" type="number" min="0" step="1" value="${escapeAttr(String(state.overrides?.consumoMensual || ''))}" placeholder="Auto: ${escapeAttr(String(q.consumoMensual || 0))}" />
-      </div>
-    </div>
+    <div class="wizard-actions" style="justify-content:space-between; margin-top:16px">
 
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBackPrecalc"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNextPrecalc"><i data-lucide="arrow-right"></i>Seleccionar paquete</button>
+      <button type="button" class="btn" id="btnBackPrecalc">
+        <i data-lucide="arrow-left"></i>
+        Volver
+      </button>
+
+      <button type="button"
+              class="btn btn--success"
+              id="btnNextPrecalc">
+        <i data-lucide="arrow-right"></i>
+        Seleccionar paquete
+      </button>
+
     </div>
   `;
 }
-
-function secomV2RenderPrecalcRight() {
-    const q = currentStep2Quote();
-
-    return `
-    <div class="card__title">Lectura técnica</div>
-
-    <div class="review-panel" style="margin-top:12px">
-      <div class="review-row"><span>Consumo mensual usado</span><b>${formatNumber(q.consumoMensual || 0)} kWh</b></div>
-      <div class="review-row"><span>Paneles sugeridos</span><b>${formatNumber(q.paneles || 0)}</b></div>
-      <div class="review-row"><span>Watts por panel</span><b>${formatNumber(q.panelWatts || state.params.panelWatts || 0)} W</b></div>
-      <div class="review-row"><span>Producción anual</span><b>${formatNumber(q.produccionAnual || 0)} kWh</b></div>
-      <div class="review-row"><span>Rendimiento efectivo</span><b>${formatNumber(q.yieldEfectivo || 0)} kWh/kWp-mes</b></div>
-    </div>
-
-    <div class="review-ok" style="margin-top:12px">
-      La cobertura no se muestra aquí porque depende del paquete o productos seleccionados.
-    </div>
-  `;
-}
-
 function secomV2WirePrecalc() {
+
     if (!state.receipt) {
         gotoStep(1);
         return;
     }
 
-    $('#btnBackPrecalc')?.addEventListener('click', () => gotoStep(2));
+    const btnBack = document.getElementById('btnBackPrecalc');
+    const btnNext = document.getElementById('btnNextPrecalc');
 
-    $('#btnNextPrecalc')?.addEventListener('click', () => {
-        secomV2SyncPrecalc();
-        gotoStep(4);
-    });
+    if (btnBack) {
+        btnBack.onclick = () => {
+            gotoStep(2);
+        };
+    }
 
-    ['#pYield', '#pPanel', '#pCost', '#pCont', '#oPaneles', '#oConsumoMensual'].forEach(id => {
-        $(id)?.addEventListener('input', debounce(() => {
-            secomV2SyncPrecalc();
-            renderWizard();
-        }, 180));
-    });
+    if (btnNext) {
+        btnNext.onclick = () => {
+
+            state.quote = state.quote || currentStep2Quote();
+
+            gotoStep(4);
+        };
+    }
+
+    window.lucide?.createIcons();
 }
+
+
 
 /* ------------------------------
    Paso 4: Paquete y productos
@@ -5479,5 +5260,308 @@ wireStep4 = function () {
 
 if (state.route === 'cotizador') {
     renderCotizadorRoute();
+}
+/* =========================================================
+   SECOM - Mejora visual Wizard V2
+   Pegar DESPUÉS del bloque V2 y ANTES del init() final
+   ========================================================= */
+
+renderCotizadorRoute = function () {
+    const root = $('#route-cotizador');
+
+    if (!state.selectedTariff) {
+        root.innerHTML = renderTariffSelector();
+        wireTariffSelector();
+        window.lucide?.createIcons();
+        return;
+    }
+
+    root.innerHTML = `
+    <div class="quote-flow-shell">
+
+      <div class="quote-flow-hero">
+        <div>
+          <div class="quote-flow-eyebrow">Nueva cotización SECOM</div>
+          <div class="quote-flow-title">Flujo guiado de cotización solar</div>
+          <div class="quote-flow-subtitle">
+            Valida el recibo, revisa el consumo, calcula la energía requerida y selecciona el paquete ideal.
+          </div>
+        </div>
+
+        <div class="quote-flow-actions">
+          <div class="pill quote-flow-pill">
+            <span class="pill__dot"></span>
+            <span>Tarifa:</span>&nbsp;<b>${escapeHtml(state.selectedTariff.label)}</b>
+          </div>
+          <button class="btn" id="btnChangeTarifa">
+            <i data-lucide="repeat-2"></i>Cambiar
+          </button>
+        </div>
+      </div>
+
+      <div class="quote-flow-impact">
+        ${renderTariffImpactBox(state.selectedTariff)}
+      </div>
+
+      <div class="quote-stepper-card">
+        <div class="stepper" id="stepper"></div>
+      </div>
+
+      <div class="quote-flow-grid">
+        <div class="card quote-main-card" id="wizardLeft"></div>
+        <div class="card quote-side-card" id="wizardRight"></div>
+      </div>
+
+    </div>
+  `;
+
+    $('#btnChangeTarifa')?.addEventListener('click', () => {
+        state.selectedTariff = null;
+        resetWizard(true);
+        renderCotizadorRoute();
+    });
+
+    buildStepper();
+    renderWizard();
+};
+
+/* FIX WIZARD V2 - consumo dividido izquierda/derecha */
+
+buildStepper = function () {
+    const el = $('#stepper');
+    const steps = [
+        {n: 1, label: 'Recibo'},
+        {n: 2, label: 'Consumo'},
+        {n: 3, label: 'Pre-cálculo'},
+        {n: 4, label: 'Paquete'},
+        {n: 5, label: 'Generar'},
+    ];
+
+    el.innerHTML = steps.map((s, i) => {
+        const cls = s.n === state.wizardStep ? 'is-active' : (s.n < state.wizardStep ? 'is-done' : '');
+        const line = i < steps.length - 1 ? '<div class="stepper__line"></div>' : '';
+        return `
+          <div class="stepper__item ${cls}">
+            <div class="stepper__dot">${s.n}</div>
+            <div class="stepper__label">${s.label}</div>
+          </div>
+          ${line}
+        `;
+    }).join('');
+
+    window.lucide?.createIcons();
+};
+
+renderWizard = function () {
+    const left = $('#wizardLeft');
+    const right = $('#wizardRight');
+
+    if (state.wizardStep === 1) {
+        left.innerHTML = renderStep1Left();
+        right.innerHTML = renderStep1Right();
+        wireStep1();
+
+    } else if (state.wizardStep === 2) {
+        left.innerHTML = secomV2RenderConsumptionLeft();
+        right.innerHTML = secomV2RenderConsumptionRight();
+        secomV2WireConsumption();
+
+    } else if (state.wizardStep === 3) {
+        left.innerHTML = secomV2RenderPrecalcLeft();
+        right.innerHTML = secomV2RenderPrecalcRight();
+        secomV2WirePrecalc();
+
+    } else if (state.wizardStep === 4) {
+        left.innerHTML = secomV2RenderPackageLeft();
+        right.innerHTML = secomV2RenderPackageRight();
+        secomV2WirePackage();
+
+    } else {
+        left.innerHTML = renderStep4Left();
+        right.innerHTML = renderStep4Right();
+        wireStep4();
+    }
+
+    window.lucide?.createIcons();
+};
+
+secomV2RenderConsumptionLeft = function () {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const q = currentStep2Quote();
+
+    const promedioMensual = Number(q?.consumoMensual || 0);
+    const promedioDiario = Number((promedioMensual * 1000) / 30 || 0);
+    const cfeMensual = Number(q?.reciboMensual || r?.totalAPagar || 0);
+    const promedioMensualDinero = cfeMensual;
+    const promedioAnualDinero = cfeMensual * 12;
+    const nota = r?.ajusteConsumo?.nota || '';
+
+    return `
+    <div class="card__title">Información de consumo</div>
+    <div class="help">Analiza el consumo energético detectado del recibo antes del pre-cálculo.</div>
+
+    <div class="consumption-kpi-layout">
+      <div class="consumption-kpi-card consumption-kpi-blue">
+        <div class="consumption-kpi-icon"><i data-lucide="zap"></i></div>
+        <div class="consumption-kpi-label">Promedio mensual</div>
+        <div class="consumption-kpi-value">${formatNumber(promedioMensual)}</div>
+        <div class="consumption-kpi-unit">kWh/mes</div>
+      </div>
+
+      <div class="consumption-kpi-card consumption-kpi-purple">
+        <div class="consumption-kpi-icon"><i data-lucide="calendar-days"></i></div>
+        <div class="consumption-kpi-label">Promedio diario</div>
+        <div class="consumption-kpi-value">${formatNumber(promedioDiario)}</div>
+        <div class="consumption-kpi-unit">W/día</div>
+      </div>
+
+      <div class="consumption-kpi-card consumption-kpi-green">
+        <div class="consumption-kpi-icon"><i data-lucide="dollar-sign"></i></div>
+        <div class="consumption-kpi-label">CFE mensual</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(cfeMensual)}</div>
+        <div class="consumption-kpi-unit">MXN/mes</div>
+      </div>
+
+      <div class="consumption-kpi-card consumption-kpi-blue">
+        <div class="consumption-kpi-icon"><i data-lucide="receipt"></i></div>
+        <div class="consumption-kpi-label">Promedio $ consumo mensual</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioMensualDinero)}</div>
+        <div class="consumption-kpi-unit">MXN/mes</div>
+      </div>
+
+      <div class="consumption-kpi-card consumption-kpi-purple">
+        <div class="consumption-kpi-icon"><i data-lucide="trending-up"></i></div>
+        <div class="consumption-kpi-label">Promedio $ consumo anual</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioAnualDinero)}</div>
+        <div class="consumption-kpi-unit">MXN/año</div>
+      </div>
+
+      <div class="consumption-kpi-card consumption-kpi-green">
+        <div class="consumption-kpi-icon"><i data-lucide="calendar"></i></div>
+        <div class="consumption-kpi-label">Periodo</div>
+        <div class="consumption-kpi-value">${escapeHtml(r?.tipoPeriodo || 'Mensual')}</div>
+        <div class="consumption-kpi-unit">tipo de recibo</div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:18px">
+      <label>Notas</label>
+      <textarea id="rAjusteNota" rows="2" placeholder="Carga futura, ampliación, crecimiento del consumo, observaciones, etc.">${escapeHtml(nota)}</textarea>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBackConsumption"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNextConsumption"><i data-lucide="arrow-right"></i>Continuar</button>
+    </div>
+  `;
+};
+
+secomV2RenderConsumptionRight = function () {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const hist = (r?.historial || []).slice(-12);
+
+    return `
+    <div class="card__title">Tendencia de consumo</div>
+    <div class="help">Gráfica y lista del historial detectado en el recibo.</div>
+
+    <div style="margin-top:12px; min-height:260px">
+      <canvas id="chart" height="220"></canvas>
+    </div>
+
+    <div class="card__subtitle" style="margin-top:16px">Lista de consumos</div>
+
+    <div style="overflow:auto; margin-top:10px; max-height:360px">
+      <table class="table table--tight consumption-history-table">
+        <thead>
+          <tr>
+            <th>Periodo</th>
+            <th>Consumo (kWh)</th>
+            <th>Pago (MXN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hist.length ? hist.map((h, i) => `
+            <tr>
+              <td>P${i + 1}</td>
+              <td><b>${formatNumber(h.kwh || 0)}</b></td>
+              <td>${formatCurrencyMXN(h.pago || 0)}</td>
+            </tr>
+          `).join('') : `
+            <tr>
+              <td colspan="3" style="color:var(--muted)">Sin datos históricos detectados.</td>
+            </tr>
+          `}
+        </tbody>
+      </table>
+    </div>
+  `;
+};
+
+secomV2WireConsumption = function () {
+    if (!state.receipt) {
+        gotoStep(1);
+        return;
+    }
+
+    $('#btnBackConsumption')?.addEventListener('click', () => gotoStep(1));
+
+    $('#btnNextConsumption')?.addEventListener('click', () => {
+        secomV2SyncConsumption();
+        gotoStep(3);
+    });
+
+    $('#rAjusteNota')?.addEventListener('input', debounce(() => {
+        if (!state.receipt.ajusteConsumo) state.receipt.ajusteConsumo = {};
+        state.receipt.ajusteConsumo.nota = $('#rAjusteNota').value.trim();
+    }, 120));
+
+    renderChart();
+};
+function secomV2RenderPrecalcRight() {
+    const q = state.quote || currentStep2Quote();
+
+    const consumoMensual = Number(q.consumoMensual || 0);
+    const consumoDiario = consumoMensual > 0 ? consumoMensual / 30 : 0;
+
+    return `
+    <div class="card__title">Lectura técnica</div>
+    <div class="help">Resumen técnico antes de seleccionar paquete o productos.</div>
+
+    <div class="review-panel" style="margin-top:12px">
+      <div class="review-row">
+        <span>Consumo mensual</span>
+        <b>${formatNumber(consumoMensual)} kWh</b>
+      </div>
+
+      <div class="review-row">
+        <span>Consumo diario</span>
+        <b>${formatNumber(consumoDiario)} kWh/día</b>
+      </div>
+
+      <div class="review-row">
+        <span>Producción mensual estimada</span>
+        <b>${formatNumber(q.produccionMensual || 0)} kWh</b>
+      </div>
+
+      <div class="review-row">
+        <span>Producción anual estimada</span>
+        <b>${formatNumber(q.produccionAnual || 0)} kWh</b>
+      </div>
+
+      <div class="review-row">
+        <span>Paneles sugeridos</span>
+        <b>${formatNumber(q.paneles || 0)}</b>
+      </div>
+
+      <div class="review-row">
+        <span>Retorno estimado</span>
+        <b>${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</b>
+      </div>
+    </div>
+
+    <div class="review-ok" style="margin-top:12px">
+      La cobertura se calculará después de seleccionar paquete o productos.
+    </div>
+  `;
 }
 init();
