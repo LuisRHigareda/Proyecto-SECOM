@@ -4173,43 +4173,106 @@ function openReportQuoteDetail(row = {}) {
 }
 
 async function exportReportPdf() {
-    if (!window.jspdf || !window.html2canvas) {
-        toast({title: 'Exportación no disponible', message: 'Falta jsPDF o html2canvas en el navegador.', icon: 'alert-triangle'});
+    // 1. Validar que la librería base exista
+    if (!window.jspdf) {
+        toast({title: 'Exportación no disponible', message: 'Falta jsPDF en el navegador.', icon: 'alert-triangle'});
         return;
     }
 
-    const area = $('#reportPreview');
-    if (!area || !state.reportes.data?.rows?.length) {
+    // 2. Extraer la clase constructora jsPDF (¡Nota las mayúsculas!)
+    const { jsPDF } = window.jspdf;
+
+    // 3. Validar que el plugin autoTable se haya cargado
+    if (!jsPDF.API.autoTable) {
+        toast({title: 'Plugin faltante', message: 'Falta la librería jspdf-autotable en index.html', icon: 'alert-triangle'});
+        return;
+    }
+
+    const rows = state.reportes.data?.rows || [];
+    const summary = state.reportes.data?.summary || {};
+    const filters = state.reportes;
+
+    if (!rows.length) {
         toast({title: 'Sin datos', message: 'Genera primero un reporte con cotizaciones.', icon: 'alert-triangle'});
         return;
     }
 
     try {
         setPillStatus('Generando PDF…', 'busy');
-        const canvas = await window.html2canvas(area, {scale: 2, useCORS: true, backgroundColor: '#ffffff', ignoreElements: el => el.classList?.contains('no-print')});
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const {jsPDF} = window.jspdf;
-        const pdf = new jsPDF({orientation: 'l', unit: 'pt', format: 'a4'});
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        const margin = 24;
-        const imgW = pageW - margin * 2;
-        const imgH = canvas.height * (imgW / canvas.width);
-        let heightLeft = imgH;
-        let position = margin;
 
-        pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-        heightLeft -= (pageH - margin * 2);
-        while (heightLeft > 0) {
-            pdf.addPage();
-            position = margin - (imgH - heightLeft);
-            pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-            heightLeft -= (pageH - margin * 2);
-        }
+        // Instanciamos el documento usando jsPDF
+        const doc = new jsPDF({ orientation: 'l', unit: 'pt', format: 'a4' });
 
+        // --- Encabezado ---
+        doc.setFontSize(18);
+        doc.setTextColor(33, 37, 41);
+        doc.text('Reporte de Cotizaciones SECOM', 40, 50);
+
+        doc.setFontSize(10);
+        doc.setTextColor(108, 117, 125);
+        doc.text(`Periodo: ${filters.fechaInicio || '—'} al ${filters.fechaFin || '—'}`, 40, 70);
+        doc.text(`Estatus: ${filters.status === 'todos' ? 'Todos' : filters.status} | Tarifa: ${filters.tarifa === 'todas' ? 'Todas' : filters.tarifa}`, 40, 85);
+
+        // --- KPIs (Resumen) ---
+        doc.setFontSize(10);
+        doc.setTextColor(33, 37, 41);
+        doc.text(`Cotizaciones Totales: ${formatNumber(summary.totalCotizaciones || 0)}`, 40, 115);
+        doc.text(`Monto Total: ${formatCurrencyMXN(summary.montoTotal || 0)}`, 240, 115);
+        doc.text(`Confirmadas: ${formatNumber(summary.confirmadas || 0)}`, 440, 115);
+        doc.text(`Potencia Total: ${Number(summary.potenciaTotalKwp || 0).toFixed(2)} kWp`, 620, 115);
+
+        // --- Preparar datos para la tabla ---
+        const tableBody = rows.map(r => [
+            r.folio || r.id || '—',
+            r.fechaTexto || r.fecha || '—',
+            r.cliente || '—',
+            r.tarifa || '—',
+            `${formatNumber(r.consumoMensual || 0)} kWh`,
+            formatNumber(r.paneles || 0),
+            `${Number(r.potenciaKwp || 0).toFixed(2)} kWp`,
+            formatCurrencyMXN(r.inversion || 0),
+            formatCurrencyMXN(r.ahorroMensual || 0),
+            `${Number(r.retornoAnios || 0).toFixed(1)} años`,
+            r.estatus || '—'
+        ]);
+
+        // --- Dibujar tabla nativa ---
+        doc.autoTable({
+            startY: 140, // Iniciar debajo del resumen
+            head: [['Folio', 'Fecha', 'Cliente', 'Tarifa', 'Consumo', 'Paneles', 'Potencia', 'Inversión', 'Ahorro', 'Retorno', 'Estatus']],
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { 
+                fillColor: [15, 30, 45], // Color oscuro acorde a tu diseño
+                textColor: 255, 
+                fontSize: 9,
+                fontStyle: 'bold'
+            },
+            bodyStyles: { 
+                fontSize: 8, 
+                textColor: 50 
+            },
+            alternateRowStyles: { 
+                fillColor: [248, 249, 250] 
+            },
+            margin: { top: 40, left: 40, right: 40, bottom: 40 },
+            // Agregar número de página en el pie
+            didDrawPage: function (data) {
+                doc.setFontSize(8);
+                doc.setTextColor(150);
+                doc.text(
+                    `Página ${doc.internal.getNumberOfPages()}`, 
+                    data.settings.margin.left, 
+                    doc.internal.pageSize.height - 20
+                );
+            }
+        });
+
+        // Guardar el PDF con el nombre formateado
         const f = state.reportes;
-        pdf.save(`Reporte_Cotizaciones_SECOM_${f.fechaInicio}_a_${f.fechaFin}.pdf`);
-        toast({title: 'PDF generado', message: 'Descarga iniciada.', icon: 'download'});
+        doc.save(`Reporte_Cotizaciones_SECOM_${f.fechaInicio}_a_${f.fechaFin}.pdf`);
+        
+        toast({title: 'PDF generado', message: 'Reporte nativo exportado correctamente.', icon: 'download'});
         setPillStatus('Listo', 'ok');
     } catch (e) {
         console.error(e);
