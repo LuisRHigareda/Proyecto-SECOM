@@ -1,7 +1,7 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
 import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
-import { getQuotes, getProjects, getInsumos, getPaquetes, getCotizacionesReport, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
+import { getQuotes, getProjects, getInsumos, getPaquetes, getInsumoDependencias, getCotizacionesReport, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
 import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog, setPackageCatalog } from './catalogData.js';
 import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
@@ -3243,7 +3243,7 @@ function normalizeInsumoCatalogPayload(raw = {}) {
     const descripcion = String(raw.descripcion || '').trim();
     const categoria = String(raw.categoria || 'General').trim() || 'General';
     const unidad = String(raw.unidad || 'UD').trim().toUpperCase() || 'UD';
-    const precio = Math.max(0, Number(raw.precio || 0));
+    const precio = raw.precio === '' || raw.precio === null || raw.precio === undefined ? 0 : Number(raw.precio);
     const impuestoInput = Number(raw.impuestoPct ?? 0.16);
     const impuestoPct = impuestoInput > 1 ? impuestoInput / 100 : impuestoInput;
     const activo = raw.activo !== false && String(raw.activo || 'true') !== 'false';
@@ -3408,22 +3408,71 @@ function openInsumoEditor(item = null) {
     });
 }
 
+function getLocalPackagesUsingInsumo(item) {
+    if (!item) {
+        return [];
+    }
+    const insumoId = item.id != null ? String(item.id) : '';
+    const code = String(item.codigo || '').trim().toUpperCase();
+    return (state.paquetes.items || []).filter(pkg => getPackageItems(pkg).some(pi => {
+        const ids = [pi.insumoId, pi.catalogId, pi.insumo_id].filter(v => v !== null && v !== undefined).map(v => String(v));
+        const itemCode = String(pi.codigo || '').trim().toUpperCase();
+        return (insumoId && ids.includes(insumoId)) || (code && itemCode === code);
+    }));
+}
+
+function loadInsumoDependencias(item) {
+    if (!item?.id) {
+        return getLocalPackagesUsingInsumo(item);
+    }
+    try {
+        const deps = getInsumoDependencias(item.id);
+        if (Array.isArray(deps)) {
+            return deps;
+        }
+    } catch (e) {
+        console.warn('No se pudieron consultar dependencias del insumo.', e);
+    }
+    loadPackageCatalogSafe(true);
+    return getLocalPackagesUsingInsumo(item);
+}
+
 function openInsumoDelete(item) {
     if (!item) {
         return;
     }
+
+    const affectedPackages = loadInsumoDependencias(item);
+    const hasDependencies = affectedPackages.length > 0;
+    const affectedList = affectedPackages.slice(0, 8).map(pkg => `
+        <li><b>${escapeHtml(pkg.nombre || pkg.label || 'Paquete')}</b>${pkg.descripcion || pkg.description ? ` — ${escapeHtml(pkg.descripcion || pkg.description)}` : ''}</li>
+    `).join('');
+    const moreText = affectedPackages.length > 8 ? `<div class="help" style="margin-top:8px">Y ${affectedPackages.length - 8} paquete(s) más.</div>` : '';
+
     openModal({
-        title: 'Eliminar insumo',
+        title: hasDependencies ? 'Advertencia: insumo asociado a paquetes' : 'Eliminar insumo',
         subtitle: item.codigo || '',
         bodyHtml: `
       <div class="help">Se eliminará el insumo <b>${escapeHtml(item.descripcion || item.codigo)}</b> del catálogo.</div>
-      <div class="review-ok" style="margin-top:12px">
-        Si posteriormente un paquete utiliza este insumo, el sistema deberá advertirlo y recalcular sus totales. Las cotizaciones ya guardadas no se modificarán.
-      </div>
+      ${hasDependencies ? `
+        <div class="review-alert" style="margin-top:12px">
+          <b>Este insumo está asociado a ${affectedPackages.length} paquete(s).</b><br>
+          Si confirmas la eliminación, el insumo se retirará de esos paquetes y sus totales se recalcularán automáticamente.
+        </div>
+        <div class="card card--flat" style="margin-top:12px; box-shadow:none">
+          <div class="card__subtitle">Paquetes afectados</div>
+          <ul style="margin:8px 0 0 18px; padding:0">${affectedList}</ul>
+          ${moreText}
+        </div>
+      ` : `
+        <div class="review-ok" style="margin-top:12px">
+          No se detectaron paquetes asociados a este insumo. Las cotizaciones ya guardadas no se modificarán.
+        </div>
+      `}
     `,
         footHtml: `
       <button class="btn" data-close="true"><i data-lucide="x"></i>Cancelar</button>
-      <button class="btn btn--danger" id="btnConfirmDeleteInsumo"><i data-lucide="trash-2"></i>Eliminar</button>
+      <button class="btn btn--danger" id="btnConfirmDeleteInsumo"><i data-lucide="trash-2"></i>${hasDependencies ? 'Eliminar y recalcular paquetes' : 'Eliminar'}</button>
     `
     });
 
@@ -3441,7 +3490,13 @@ function openInsumoDelete(item) {
             if (state.route === 'cotizador') {
                 renderCotizadorRoute();
             }
-            toast({title: 'Insumo eliminado', message: `${item.codigo} se retiró del catálogo.`, icon: 'trash-2'});
+            toast({
+                title: 'Insumo eliminado',
+                message: hasDependencies
+                        ? `${item.codigo} se retiró del catálogo y de ${affectedPackages.length} paquete(s) relacionado(s).`
+                        : `${item.codigo} se retiró del catálogo.`,
+                icon: 'trash-2'
+            });
             setPillStatus('Listo', 'ok');
         } catch (e) {
             console.error(e);

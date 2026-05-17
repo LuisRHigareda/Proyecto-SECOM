@@ -422,8 +422,9 @@ public final class BackendStore {
         }
 
         ConnectionDB db = new ConnectionDB(false);
+        Connection conn = db.getConexion();
         try {
-            Connection conn = db.getConexion();
+            conn.setAutoCommit(false);
             ensureInsumosSchema(conn);
             ensurePaquetesSchema(conn);
 
@@ -441,6 +442,55 @@ public final class BackendStore {
                     throw new IllegalStateException("No se encontró el insumo indicado.");
                 }
             }
+            conn.commit();
+        } catch (Exception ex) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignore) {
+            }
+            throw ex;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignore) {
+            }
+            db.close();
+        }
+    }
+
+    public static List<Map<String, Object>> listPaquetesByInsumo(String frontId) throws Exception {
+        int id = parsePlainInt(frontId);
+        if (id <= 0) {
+            throw new IllegalArgumentException("ID de insumo inválido.");
+        }
+
+        ConnectionDB db = new ConnectionDB(false);
+        try {
+            Connection conn = db.getConexion();
+            ensureInsumosSchema(conn);
+            ensurePaquetesSchema(conn);
+
+            String sql = """
+                SELECT DISTINCT p.id, p.clave, p.nombre, p.descripcion, p.badge,
+                       p.activo, p.observaciones, p.created_at, p.updated_at
+                FROM paquetes_catalogo p
+                INNER JOIN paquete_insumos pi ON pi.paquete_id = p.id
+                WHERE pi.insumo_id = ?
+                  AND pi.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+                ORDER BY p.nombre ASC, p.id ASC
+            """;
+
+            List<Map<String, Object>> out = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        out.add(mapPaqueteRow(conn, rs));
+                    }
+                }
+            }
+            return out;
         } finally {
             db.close();
         }
@@ -1007,7 +1057,7 @@ public final class BackendStore {
         String descripcion = asString(in.get("descripcion"));
         String categoria = firstNonBlank(asString(in.get("categoria")), "General");
         String unidad = firstNonBlank(asString(in.get("unidad")).toUpperCase(), "UD");
-        double precio = positive(asDouble(in.get("precio")));
+        double precio = asDouble(in.get("precio"));
         double impuestoPct = normalizePct(asDouble(in.get("impuestoPct")), 0.16);
         boolean activo = asBoolean(in.get("activo"), true);
         String observaciones = asString(in.get("observaciones"));
@@ -1020,6 +1070,9 @@ public final class BackendStore {
         }
         if (isBlank(unidad)) {
             throw new IllegalArgumentException("La unidad de medida es obligatoria.");
+        }
+        if (precio < 0) {
+            throw new IllegalArgumentException("El precio unitario debe ser mayor o igual a cero.");
         }
 
         Map<String, Object> out = new LinkedHashMap<>();

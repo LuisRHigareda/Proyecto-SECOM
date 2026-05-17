@@ -17,9 +17,17 @@ public class InsumosServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         try {
+            String path = request.getPathInfo();
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("ok", true);
-            body.put("data", BackendStore.listInsumos());
+
+            if (path != null && path.matches("^/[^/]+/dependencias/?$")) {
+                String id = path.split("/")[1];
+                body.put("data", BackendStore.listPaquetesByInsumo(id));
+            } else {
+                body.put("data", BackendStore.listInsumos());
+            }
+
             JsonResponse.send(response, HttpServletResponse.SC_OK, body);
         } catch (Exception ex) {
             sendError(response, ex);

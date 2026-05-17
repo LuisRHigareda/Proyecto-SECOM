@@ -54,6 +54,10 @@ export function updateInsumo(id, patch){
   return request('PUT', `api/insumos/${encodeURIComponent(id)}`, patch);
 }
 
+export function getInsumoDependencias(id){
+  return request('GET', `api/insumos/${encodeURIComponent(id)}/dependencias`);
+}
+
 export function removeInsumo(id){
   return request('DELETE', `api/insumos/${encodeURIComponent(id)}`);
 }
