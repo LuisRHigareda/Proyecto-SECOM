@@ -383,7 +383,6 @@ function renderAllRoutes() {
 // ------------------------------
 
 function renderCotizadorRoute() {
-
     const root = $('#route-cotizador');
 
     if (!state.selectedTariff) {
@@ -396,25 +395,18 @@ function renderCotizadorRoute() {
     root.innerHTML = `
         <div class="wizard-shell">
 
-            <div class="wizard-header">
-                <div>
-                    <div class="wizard-title">
-                        Nueva cotización SECOM
-                    </div>
-
-                    <div class="wizard-subtitle">
-                        Flujo guiado de cotización solar
-                    </div>
-                </div>
-
+            <div class="wizard-top-clean">
                 <div class="pill">
                     <span class="pill__dot"></span>
                     <span>Tarifa:</span>
                     <b>${escapeHtml(state.selectedTariff.label)}</b>
                 </div>
-            </div>
 
-            ${renderTariffImpactBox(state.selectedTariff)}
+                <button class="btn" id="btnChangeTarifa">
+                    <i data-lucide="repeat-2"></i>
+                    Cambiar
+                </button>
+            </div>
 
             <div class="card card--flat wizard-stepper-card">
                 <div class="stepper" id="stepper"></div>
@@ -764,44 +756,188 @@ function renderWizard() {
 }
 
 function renderStep1Left() {
+
+    const hasReceipt = !!state.receipt;
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+
     return `
-    <div class="card__title">Recibo de luz</div>
-    <div class="help">Sube un archivo PDF o una imagen (JPG/PNG) del recibo.</div>
+    <div class="card__title">Información del recibo</div>
+    <div class="help">
+        Valida la información detectada desde el recibo CFE.
+    </div>
 
     <input id="fileInput" type="file" accept="application/pdf,image/png,image/jpeg" hidden />
 
     <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Cargar recibo">
-      <div class="dropzone__icon"><i data-lucide="upload"></i></div>
-      <div style="min-width:0">
-        <div class="dropzone__title">Arrastre y suelte aquí, o seleccione un archivo</div>
-        <div class="dropzone__sub" id="fileHint">PDF o imagen</div>
-      </div>
+        <div class="dropzone__icon">
+            <i data-lucide="upload"></i>
+        </div>
+
+        <div style="min-width:0">
+            <div class="dropzone__title">
+                Arrastre y suelte aquí, o seleccione un archivo
+            </div>
+
+            <div class="dropzone__sub" id="fileHint">
+                PDF o imagen
+            </div>
+        </div>
     </div>
 
     <div class="wizard-actions">
-      <button class="btn btn--primary" id="btnAnalyze"><i data-lucide="scan"></i>Analizar</button>
-      <button class="btn" id="btnManualCapture"><i data-lucide="keyboard"></i>Captura manual</button>
-      <button class="btn" id="btnClear"><i data-lucide="trash-2"></i>Limpiar</button>
+        <button class="btn btn--primary" id="btnAnalyze">
+            <i data-lucide="scan"></i>
+            Analizar
+        </button>
+
+        <button class="btn" id="btnManualCapture">
+            <i data-lucide="keyboard"></i>
+            Captura manual
+        </button>
+
+        <button class="btn" id="btnClear">
+            <i data-lucide="trash-2"></i>
+            Limpiar
+        </button>
     </div>
 
-    <div class="kpis">
-      <div class="kpi">
-        <div class="kpi__label">Tarifa</div>
-        <div class="kpi__value" id="kpiTarifa">—</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Consumo periodo</div>
-        <div class="kpi__value" id="kpiConsumo">—</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi__label">Total a pagar</div>
-        <div class="kpi__value" id="kpiTotal">—</div>
-      </div>
+    <div class="receipt-detected-panel">
+
+        <div class="receipt-detected-header">
+
+            <div class="receipt-status-icon">
+                <i data-lucide="${hasReceipt ? 'check-circle' : 'file-text'}"></i>
+            </div>
+
+            <div>
+                <div class="receipt-detected-title">
+                    ${hasReceipt
+                        ? 'Información del recibo'
+                        : 'Información del recibo'}
+                </div>
+
+                <div class="receipt-detected-subtitle">
+                    ${hasReceipt
+                        ? 'Datos del recibo CFE'
+                        : 'Completa o valida los datos antes de continuar'}
+                </div>
+            </div>
+
+        </div>
+
+        <div class="receipt-info-grid">
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="file-text"></i>
+                    Numero de Servicio
+                </div>
+
+                <input
+                    id="rServicio"
+                    placeholder="###########"
+                    value="${escapeAttr(r?.servicio || '')}"
+                />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="user-circle"></i>
+                    Nombre del Cliente
+                </div>
+
+                <input
+                    id="rNombre"
+                    placeholder="Titular del recibo"
+                    value="${escapeAttr(r?.nombre || '')}"
+                />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="zap"></i>
+                    Tariffa
+                </div>
+
+                <input
+                    id="rTarifa"
+                    placeholder="1B / DAC / PDBT"
+                    value="${escapeAttr(r?.tarifa || state.selectedTariff?.label || '')}"
+                />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="map-pin"></i>
+                    Estado
+                </div>
+
+                <input
+                    id="rEstado"
+                    placeholder="SON"
+                    value="${escapeAttr(r?.estado || '')}"
+                />
+            </div>
+
+            <div class="receipt-info-card receipt-info-card--wide">
+                <div class="receipt-info-label">
+                    <i data-lucide="map-pin"></i>
+                    Direccion
+                </div>
+
+                <textarea
+                    id="rDireccion"
+                    rows="2"
+                    placeholder="Dirección del suministro"
+                >${escapeHtml(r?.direccion || '')}</textarea>
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="calendar"></i>
+                     Periodo
+                </div>
+
+                <input
+                    id="rPeriodo"
+                    placeholder="DD MMM AA - DD MMM AA"
+                    value="${escapeAttr(r?.periodo?.raw || '')}"
+                />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="calendar-days"></i>
+                    Tipo de periodo
+                </div>
+
+                <select id="rTipoPeriodo">
+                    <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>
+                        Mensual
+                    </option>
+
+                    <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>
+                        Bimestral
+                    </option>
+                </select>
+            </div>
+
+        </div>
     </div>
 
     <div class="wizard-actions" style="justify-content:space-between">
-      <div class="help" id="analyzeMsg"> </div>
-      <button class="btn btn--success" id="btnStep1Next" disabled><i data-lucide="arrow-right"></i>Continuar</button>
+
+        <div class="help" id="analyzeMsg"></div>
+
+        <button
+            class="btn btn--success"
+            id="btnStep1Next"
+            ${hasReceipt ? '' : 'disabled'}
+        >
+            <i data-lucide="arrow-right"></i>
+            Continuar
+        </button>
+
     </div>
   `;
 }
@@ -4231,8 +4367,8 @@ renderStep1Left = function () {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
 
     return `
-    <div class="card__title">Validación de recibo CFE</div>
-    <div class="help">Sube el recibo o inicia captura manual. En este paso solo valida datos básicos detectados por OCR o captura manual.</div>
+    <div class="card__title">Información del recibo</div>
+    <div class="help">Valida la información detectada desde el recibo CFE.</div>
 
     <input id="fileInput" type="file" accept="application/pdf,image/png,image/jpeg" hidden />
 
@@ -4250,46 +4386,81 @@ renderStep1Left = function () {
       <button class="btn" id="btnClear"><i data-lucide="trash-2"></i>Limpiar</button>
     </div>
 
-    <div class="quote-wizard-panel" style="margin-top:14px">
-      <div class="card__subtitle">Información del recibo</div>
+    <div class="receipt-detected-panel">
 
-      <div class="grid cols-2" style="margin-top:10px">
-        <div class="field">
-          <label>No. de servicio</label>
-          <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
-        </div>
-        <div class="field">
-          <label>Nombre del cliente</label>
-          <input id="rNombre" placeholder="Titular del recibo" value="${escapeAttr(r?.nombre || '')}" />
-        </div>
-        <div class="field">
-          <label>Tarifa</label>
-          <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || state.selectedTariff?.label || '')}" />
-        </div>
-        <div class="field">
-          <label>Estado</label>
-          <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
-        </div>
-      </div>
+        <div class="receipt-detected-header">
+            <div class="receipt-status-icon">
+                <i data-lucide="check-circle"></i>
+            </div>
 
-      <div class="field" style="margin-top:10px">
-        <label>Dirección</label>
-        <textarea id="rDireccion" rows="3" placeholder="Dirección del suministro">${escapeHtml(r?.direccion || '')}</textarea>
-      </div>
+            <div>
+                <div class="receipt-detected-title">Información del recibo</div>
+                <div class="receipt-detected-subtitle">Datos del recibo CFE</div>
+            </div>
+        </div>
 
-      <div class="row" style="margin-top:10px">
-        <div class="field" style="flex:1.4">
-          <label>Periodo facturado</label>
-          <input id="rPeriodo" placeholder="DD MMM AA - DD MMM AA" value="${escapeAttr(r?.periodo?.raw || '')}" />
+        <div class="receipt-info-grid">
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="file-text"></i>
+                    Numero de Servicio
+                </div>
+                <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="user-circle"></i>
+                    Nombre del Cliente
+                </div>
+                <input id="rNombre" placeholder="Titular del recibo" value="${escapeAttr(r?.nombre || '')}" />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="zap"></i>
+                    Tariffa
+                </div>
+                <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || state.selectedTariff?.label || '')}" />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="map-pin"></i>
+                    Estado
+                </div>
+                <input id="rEstado" placeholder="SON" value="${escapeAttr(String(r?.estado || ''))}" />
+            </div>
+
+            <div class="receipt-info-card receipt-info-card--wide">
+                <div class="receipt-info-label">
+                    <i data-lucide="map-pin"></i>
+                    Address
+                </div>
+                <textarea id="rDireccion" rows="2" placeholder="Dirección del suministro">${escapeHtml(r?.direccion || '')}</textarea>
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="calendar"></i>
+                     Periodo
+                </div>
+                <input id="rPeriodo" placeholder="DD MMM AA - DD MMM AA" value="${escapeAttr(r?.periodo?.raw || '')}" />
+            </div>
+
+            <div class="receipt-info-card">
+                <div class="receipt-info-label">
+                    <i data-lucide="calendar-days"></i>
+                    Tipo de periodo
+                </div>
+                <select id="rTipoPeriodo">
+                    <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>Mensual</option>
+                    <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>Bimestral</option>
+                </select>
+            </div>
+
         </div>
-        <div class="field">
-          <label>Tipo de periodo</label>
-          <select id="rTipoPeriodo">
-            <option ${r?.tipoPeriodo === 'Mensual' ? 'selected' : ''}>Mensual</option>
-            <option ${r?.tipoPeriodo === 'Bimestral' ? 'selected' : ''}>Bimestral</option>
-          </select>
-        </div>
-      </div>
     </div>
 
     <div class="wizard-actions" style="justify-content:space-between">
@@ -5279,14 +5450,7 @@ renderCotizadorRoute = function () {
     root.innerHTML = `
     <div class="quote-flow-shell">
 
-      <div class="quote-flow-hero">
-        <div>
-          <div class="quote-flow-eyebrow">Nueva cotización SECOM</div>
-          <div class="quote-flow-title">Flujo guiado de cotización solar</div>
-          <div class="quote-flow-subtitle">
-            Valida el recibo, revisa el consumo, calcula la energía requerida y selecciona el paquete ideal.
-          </div>
-        </div>
+     
 
         <div class="quote-flow-actions">
           <div class="pill quote-flow-pill">
@@ -5299,10 +5463,7 @@ renderCotizadorRoute = function () {
         </div>
       </div>
 
-      <div class="quote-flow-impact">
-        ${renderTariffImpactBox(state.selectedTariff)}
-      </div>
-
+      
       <div class="quote-stepper-card">
         <div class="stepper" id="stepper"></div>
       </div>

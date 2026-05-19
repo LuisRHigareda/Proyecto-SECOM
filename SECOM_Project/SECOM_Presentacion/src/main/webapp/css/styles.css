@@ -1872,3 +1872,120 @@ button, input, select, textarea{
     line-height:1;
     display:block;
 }
+/* HEADER LIMPIO DEL WIZARD */
+
+.wizard-top-clean{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:14px;
+    margin-bottom:14px;
+}
+
+.wizard-top-clean .pill{
+    flex:1;
+}
+
+/* RECIBO ESTILO FIGMA */
+
+.receipt-detected-panel{
+    margin-top:16px;
+    padding:28px;
+    border-radius:28px;
+    border:1px solid rgba(255,255,255,.10);
+    background:
+        radial-gradient(circle at top left, rgba(59,130,246,.10), transparent 34%),
+        linear-gradient(180deg, rgba(31,41,59,.82), rgba(15,23,42,.88));
+}
+
+.receipt-detected-header{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    margin-bottom:24px;
+}
+
+.receipt-status-icon{
+    width:56px;
+    height:56px;
+    border-radius:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(16,185,129,.16);
+    color:#00e887;
+}
+
+.receipt-status-icon svg{
+    width:28px;
+    height:28px;
+}
+
+.receipt-detected-title{
+    font-size:22px;
+    font-weight:800;
+    color:#fff;
+}
+
+.receipt-detected-subtitle{
+    color:rgba(255,255,255,.58);
+    font-size:15px;
+    margin-top:2px;
+}
+
+.receipt-info-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:16px;
+}
+
+.receipt-info-card{
+    padding:18px;
+    border-radius:16px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.045);
+}
+
+.receipt-info-card--wide{
+    grid-column:1 / -1;
+}
+
+.receipt-info-label{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    color:rgba(255,255,255,.55);
+    font-size:14px;
+    font-weight:700;
+    margin-bottom:10px;
+}
+
+.receipt-info-label svg{
+    width:18px;
+    height:18px;
+    color:#3b82f6;
+}
+
+.receipt-info-card input,
+.receipt-info-card textarea,
+.receipt-info-card select{
+    width:100%;
+    border:0 !important;
+    outline:0 !important;
+    padding:0 !important;
+    background:transparent !important;
+    color:#fff !important;
+    font-size:18px !important;
+    font-weight:700 !important;
+    box-shadow:none !important;
+}
+
+.receipt-info-card textarea{
+    resize:vertical;
+    min-height:42px;
+}
+
+.receipt-info-card input::placeholder,
+.receipt-info-card textarea::placeholder{
+    color:rgba(255,255,255,.35);
+}
