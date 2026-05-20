@@ -412,7 +412,7 @@ function renderCotizadorRoute() {
                 <div class="stepper" id="stepper"></div>
             </div>
 
-            <div class="wizard-grid">
+            <div class="wizard-grid" id="wizardGrid">
                 <div id="wizardLeft"></div>
                 <div id="wizardRight"></div>
             </div>
@@ -420,14 +420,14 @@ function renderCotizadorRoute() {
         </div>
     `;
 
-    buildStepper();
-    renderWizard();
-
     $('#btnChangeTarifa')?.addEventListener('click', () => {
         state.selectedTariff = null;
         resetWizard(true);
         renderCotizadorRoute();
     });
+
+    buildStepper();
+    renderWizard();
 
     window.lucide?.createIcons();
 }
@@ -669,7 +669,7 @@ function buildStepper() {
         {n: 1, label: 'Recibo'},
         {n: 2, label: 'Consumo'},
         {n: 3, label: 'Pre-cálculo'},
-        {n: 4, label: 'Paquete'},
+        {n: 4, label: 'Productos'},
         {n: 5, label: 'Generar'},
     ];
 
@@ -708,11 +708,57 @@ function gotoStep(n) {
     buildStepper();
     renderWizard();
 }
-function renderWizard() {
-    const left = $('#wizardLeft');
-    const right = $('#wizardRight');
+function restoreWizardRight() {
+    const grid = document.getElementById('wizardGrid');
 
-    if (!left || !right) return;
+    if (!grid) return;
+
+    if (!document.getElementById('wizardRight')) {
+        const right = document.createElement('div');
+        right.id = 'wizardRight';
+        grid.appendChild(right);
+    }
+}
+function renderWizard() {
+    const grid = document.getElementById('wizardGrid') || document.querySelector('.wizard-grid');
+
+    if (!grid) return;
+
+    grid.classList.remove('wizard-grid--products');
+
+    grid.style.removeProperty('display');
+    grid.style.removeProperty('grid-template-columns');
+    grid.style.removeProperty('width');
+    grid.style.removeProperty('max-width');
+
+    if (state.wizardStep === 4) {
+        grid.classList.add('wizard-grid--products');
+
+        grid.style.setProperty('display', 'grid', 'important');
+        grid.style.setProperty('grid-template-columns', '1fr', 'important');
+        grid.style.setProperty('width', '100%', 'important');
+        grid.style.setProperty('max-width', '100%', 'important');
+
+        grid.innerHTML = `
+            <div id="wizardLeft" class="wizard-products-only"></div>
+        `;
+
+        const left = document.getElementById('wizardLeft');
+
+        left.innerHTML = secomV2RenderPackageLeft();
+
+        secomV2WirePackage();
+        window.lucide?.createIcons();
+        return;
+    }
+
+    grid.innerHTML = `
+        <div id="wizardLeft"></div>
+        <div id="wizardRight"></div>
+    `;
+
+    const left = document.getElementById('wizardLeft');
+    const right = document.getElementById('wizardRight');
 
     if (state.wizardStep === 1) {
         left.innerHTML = renderStep1Left();
@@ -727,26 +773,9 @@ function renderWizard() {
     } else if (state.wizardStep === 3) {
         left.innerHTML = secomV2RenderPrecalcLeft();
         right.innerHTML = secomV2RenderPrecalcRight();
+        secomV2WirePrecalc();
 
-        // Botones directos del paso 3
-        const btnBack = left.querySelector('#btnBackPrecalc');
-        const btnNext = left.querySelector('#btnNextPrecalc');
-
-        btnBack?.addEventListener('click', () => {
-            gotoStep(2);
-        });
-
-        btnNext?.addEventListener('click', () => {
-            state.quote = state.quote || currentStep2Quote();
-            gotoStep(4);
-        });
-
-    } else if (state.wizardStep === 4) {
-        left.innerHTML = secomV2RenderPackageLeft();
-        right.innerHTML = secomV2RenderPackageRight();
-        secomV2WirePackage();
-
-    } else if (state.wizardStep === 5) {
+    } else {
         left.innerHTML = renderStep4Left();
         right.innerHTML = renderStep4Right();
         wireStep4();
@@ -754,7 +783,6 @@ function renderWizard() {
 
     window.lucide?.createIcons();
 }
-
 function renderStep1Left() {
 
     const hasReceipt = !!state.receipt;
@@ -5044,7 +5072,7 @@ function secomV2RenderPrecalcLeft() {
               class="btn btn--success"
               id="btnNextPrecalc">
         <i data-lucide="arrow-right"></i>
-        Seleccionar paquete
+        Seleccionar Producto
       </button>
 
     </div>
@@ -5083,167 +5111,165 @@ function secomV2WirePrecalc() {
 /* ------------------------------
    Paso 4: Paquete y productos
 ------------------------------ */
-
-function secomV2RenderPackageLeft() {
-    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
-    const q = currentStep2Quote();
-    const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
-    const impuestosPct = Number.isFinite(Number(r?.impuestosPct))
-            ? Number(r.impuestosPct)
-            : (state.preferences?.quoteDefaults?.taxPct || 0.16);
-
-    return `
-    <div class="card__title">Paquete y productos</div>
-    <div class="help">Selecciona paquete, paneles, inversor, estructura, protecciones e insumos adicionales.</div>
-
-    <div class="card__subtitle" style="margin-top:14px">Paquete solar</div>
-    <div class="package-grid" style="margin-top:10px">
-      ${renderPackageCards()}
-    </div>
-
-    <div class="row" style="justify-content:space-between; margin-top:10px; align-items:flex-start">
-      <div class="help" id="packageLabel">
-        ${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado.'}
-      </div>
-      <button class="btn" id="btnClearPackage"><i data-lucide="eraser"></i>Quitar paquete</button>
-    </div>
-
-    <div class="package-preview" id="packagePreview" style="margin-top:10px">
-      ${renderPackagePreviewItems()}
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Componentes principales</div>
-
-    <div class="grid cols-3" style="margin-top:10px">
-      <div class="field">
-        <label>Paneles</label>
-        <input id="mPanelModelo" placeholder="Ej. JA Solar 550 W" value="${escapeAttr(state.quoteMeta.panelModelo || '')}" />
-      </div>
-      <div class="field">
-        <label>Dimensiones del panel</label>
-        <input id="mPanelDim" placeholder="Ej. 2.27 x 1.13 m" value="${escapeAttr(state.quoteMeta.panelDimensiones || '')}" />
-      </div>
-      <div class="field">
-        <label>Inversor</label>
-        <input id="mInversor" placeholder="Ej. Huawei SUN2000" value="${escapeAttr(state.quoteMeta.inversorModelo || '')}" />
-      </div>
-      <div class="field">
-        <label>Estructura / tipo de techo</label>
-        <select id="mTecho">
-          ${['No especificado', 'Losa', 'Lámina', 'Teja', 'Otro'].map(x => `<option ${x === state.quoteMeta.tipoTecho ? 'selected' : ''}>${x}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field">
-        <label>Sombras / pérdidas</label>
-        <select id="mSombras">
-          <option value="0" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0 ? 'selected' : ''}>Ninguna (0%)</option>
-          <option value="0.10" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.10 ? 'selected' : ''}>Baja (10%)</option>
-          <option value="0.20" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.20 ? 'selected' : ''}>Media (20%)</option>
-          <option value="0.35" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.35 ? 'selected' : ''}>Alta (35%)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Protecciones</label>
-        <input value="Protecciones CC/CA" disabled />
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:10px">
-      <label>Notas técnicas</label>
-      <textarea id="mNotasFisicas" rows="2" placeholder="Área disponible, orientación, estructura, protecciones u observaciones.">${escapeHtml(state.quoteMeta.notasFisicas || '')}</textarea>
-    </div>
-
-    <div class="card__subtitle" style="margin-top:14px">Productos / insumos adicionales</div>
-
-    <div class="row" style="margin-top:10px; align-items:flex-end">
-      <div class="field" style="flex:2">
-        <label>Agregar desde catálogo</label>
-        <select id="insCatalog">
-          <option value="">Selecciona un insumo...</option>
-          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio)}</option>`).join('')}
-        </select>
-      </div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap">
-        <button class="btn" id="btnAddCatalog"><i data-lucide="plus"></i>Agregar</button>
-        <button class="btn" id="btnAddManual"><i data-lucide="edit-3"></i>Agregar manual</button>
-      </div>
-    </div>
-
-    <div style="overflow:auto; margin-top:10px">
-      <table class="table table--tight" id="insTable">
-        <thead>
-          <tr>
-            <th style="min-width:140px">Código</th>
-            <th style="min-width:280px">Descripción</th>
-            <th style="min-width:120px">Cantidad</th>
-            <th style="min-width:120px">Unidad</th>
-            <th style="min-width:140px">Precio</th>
-            <th style="min-width:140px">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${insumos.length ? insumos.map((it, i) => renderInsumoRow(it, i)).join('') : `
-            <tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>
-          `}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="insumos-summary" style="margin-top:10px">
-      <div class="insumos-summary__row"><span>Subtotal</span><b id="insSubtotal">—</b></div>
-      <div class="insumos-summary__row">
-        <span>Impuestos (IVA %)</span>
-        <div style="display:flex; align-items:center; gap:10px">
-          <input id="insTaxPct" class="insumos-summary__tax" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(Math.round(impuestosPct * 100 * 10) / 10))}" />
-          <b id="insTaxes">—</b>
-        </div>
-      </div>
-      <div class="insumos-summary__row insumos-summary__row--total"><span>Total</span><b id="insTotal">—</b></div>
-    </div>
-
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBackPackage"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNextPackage"><i data-lucide="arrow-right"></i>Generar cotización</button>
-    </div>
-
-    <div class="help" id="msg2" style="margin-top:10px"></div>
-  `;
-}
-
-function secomV2RenderPackageRight() {
-    const q = currentStep2Quote();
-    const coverage = secomV2GetCoveragePct(q);
-
-    return `
-    <div class="card__title">Resumen de cotización</div>
-
-    <div class="quote-summary-panel" style="margin-top:12px">
-      <div class="quote-summary-panel__title">${state.selectedPackage ? 'Paquete seleccionado' : 'Selecciona productos'}</div>
-      <div class="review-row"><span>Instalado</span><b id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</b></div>
-      <div class="review-row"><span>Producción estimada</span><b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b></div>
-      <div class="review-row"><span>Cobertura</span><b id="summaryCoverage">${coverage == null ? 'Pendiente' : `${coverage}%`}</b></div>
-      <div class="review-row"><span>Ahorro estimado</span><b id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</b></div>
-      <div class="review-row"><span>Total cotización</span><b id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</b></div>
-    </div>
-
-    <div class="grid cols-2" style="margin-top:12px">
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Paneles</div>
-        <div class="kpi__value">${formatNumber(q.paneles || 0)}</div>
-      </div>
-      <div class="kpi quote-kpi-card">
-        <div class="kpi__label">Retorno</div>
-        <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
-      </div>
-    </div>
-
-    <div id="step2Alerts" style="margin-top:12px">
-      ${state.selectedPackage || (state.receipt?.insumos || []).length
-            ? '<div class="review-ok">Productos listos para generar la cotización.</div>'
-            : '<div class="review-alert">Selecciona un paquete o agrega productos para calcular cobertura.</div>'}
-    </div>
-  `;
-}
+//
+//    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+//    const q = currentStep2Quote();
+//    const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
+//    const impuestosPct = Number.isFinite(Number(r?.impuestosPct))
+//            ? Number(r.impuestosPct)
+//            : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+//
+//    return `
+//    <div class="card__title">Paquete y productos</div>
+//    <div class="help">Selecciona paquete, paneles, inversor, estructura, protecciones e insumos adicionales.</div>
+//
+//    <div class="card__subtitle" style="margin-top:14px">Paquete solar</div>
+//    <div class="package-grid" style="margin-top:10px">
+//      ${renderPackageCards()}
+//    </div>
+//
+//    <div class="row" style="justify-content:space-between; margin-top:10px; align-items:flex-start">
+//      <div class="help" id="packageLabel">
+//        ${state.selectedPackage ? getPackageSummaryLabel(state.selectedPackage, {quote: q, receipt: state.receipt, paneles: q.paneles, consumoMensual: q.consumoMensual}) : 'Sin paquete seleccionado.'}
+//      </div>
+//      <button class="btn" id="btnClearPackage"><i data-lucide="eraser"></i>Quitar paquete</button>
+//    </div>
+//
+//    <div class="package-preview" id="packagePreview" style="margin-top:10px">
+//      ${renderPackagePreviewItems()}
+//    </div>
+//
+//    <div class="card__subtitle" style="margin-top:14px">Componentes principales</div>
+//
+//    <div class="grid cols-3" style="margin-top:10px">
+//      <div class="field">
+//        <label>Paneles</label>
+//        <input id="mPanelModelo" placeholder="Ej. JA Solar 550 W" value="${escapeAttr(state.quoteMeta.panelModelo || '')}" />
+//      </div>
+//      <div class="field">
+//        <label>Dimensiones del panel</label>
+//        <input id="mPanelDim" placeholder="Ej. 2.27 x 1.13 m" value="${escapeAttr(state.quoteMeta.panelDimensiones || '')}" />
+//      </div>
+//      <div class="field">
+//        <label>Inversor</label>
+//        <input id="mInversor" placeholder="Ej. Huawei SUN2000" value="${escapeAttr(state.quoteMeta.inversorModelo || '')}" />
+//      </div>
+//      <div class="field">
+//        <label>Estructura / tipo de techo</label>
+//        <select id="mTecho">
+//          ${['No especificado', 'Losa', 'Lámina', 'Teja', 'Otro'].map(x => `<option ${x === state.quoteMeta.tipoTecho ? 'selected' : ''}>${x}</option>`).join('')}
+//        </select>
+//      </div>
+//      <div class="field">
+//        <label>Sombras / pérdidas</label>
+//        <select id="mSombras">
+//          <option value="0" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0 ? 'selected' : ''}>Ninguna (0%)</option>
+//          <option value="0.10" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.10 ? 'selected' : ''}>Baja (10%)</option>
+//          <option value="0.20" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.20 ? 'selected' : ''}>Media (20%)</option>
+//          <option value="0.35" ${Number(state.quoteMeta.perdidasSombraPct || 0) === 0.35 ? 'selected' : ''}>Alta (35%)</option>
+//        </select>
+//      </div>
+//      <div class="field">
+//        <label>Protecciones</label>
+//        <input value="Protecciones CC/CA" disabled />
+//      </div>
+//    </div>
+//
+//    <div class="field" style="margin-top:10px">
+//      <label>Notas técnicas</label>
+//      <textarea id="mNotasFisicas" rows="2" placeholder="Área disponible, orientación, estructura, protecciones u observaciones.">${escapeHtml(state.quoteMeta.notasFisicas || '')}</textarea>
+//    </div>
+//
+//    <div class="card__subtitle" style="margin-top:14px">Productos / insumos adicionales</div>
+//
+//    <div class="row" style="margin-top:10px; align-items:flex-end">
+//      <div class="field" style="flex:2">
+//        <label>Agregar desde catálogo</label>
+//        <select id="insCatalog">
+//          <option value="">Selecciona un insumo...</option>
+//          ${INSUMO_CATALOG.map((it, idx) => `<option value="${idx}">${escapeHtml(it.codigo)} · ${escapeHtml(it.descripcion)} · ${formatCurrencyMXN(it.precio)}</option>`).join('')}
+//        </select>
+//      </div>
+//      <div style="display:flex; gap:10px; flex-wrap:wrap">
+//        <button class="btn" id="btnAddCatalog"><i data-lucide="plus"></i>Agregar</button>
+//        <button class="btn" id="btnAddManual"><i data-lucide="edit-3"></i>Agregar manual</button>
+//      </div>
+//    </div>
+//
+//    <div style="overflow:auto; margin-top:10px">
+//      <table class="table table--tight" id="insTable">
+//        <thead>
+//          <tr>
+//            <th style="min-width:140px">Código</th>
+//            <th style="min-width:280px">Descripción</th>
+//            <th style="min-width:120px">Cantidad</th>
+//            <th style="min-width:120px">Unidad</th>
+//            <th style="min-width:140px">Precio</th>
+//            <th style="min-width:140px">Total</th>
+//          </tr>
+//        </thead>
+//        <tbody>
+//          ${insumos.length ? insumos.map((it, i) => renderInsumoRow(it, i)).join('') : `
+//            <tr><td colspan="6" style="color:var(--muted)">Aún no hay insumos agregados.</td></tr>
+//          `}
+//        </tbody>
+//      </table>
+//    </div>
+//
+//    <div class="insumos-summary" style="margin-top:10px">
+//      <div class="insumos-summary__row"><span>Subtotal</span><b id="insSubtotal">—</b></div>
+//      <div class="insumos-summary__row">
+//        <span>Impuestos (IVA %)</span>
+//        <div style="display:flex; align-items:center; gap:10px">
+//          <input id="insTaxPct" class="insumos-summary__tax" type="number" min="0" max="30" step="0.5" value="${escapeAttr(String(Math.round(impuestosPct * 100 * 10) / 10))}" />
+//          <b id="insTaxes">—</b>
+//        </div>
+//      </div>
+//      <div class="insumos-summary__row insumos-summary__row--total"><span>Total</span><b id="insTotal">—</b></div>
+//    </div>
+//
+//    <div class="wizard-actions" style="justify-content:space-between">
+//      <button class="btn" id="btnBackPackage"><i data-lucide="arrow-left"></i>Volver</button>
+//      <button class="btn btn--success" id="btnNextPackage"><i data-lucide="arrow-right"></i>Generar cotización</button>
+//    </div>
+//
+//    <div class="help" id="msg2" style="margin-top:10px"></div>
+//  `;
+//}
+//
+//    const q = currentStep2Quote();
+//    const coverage = secomV2GetCoveragePct(q);
+//
+//    return `
+//    <div class="card__title">Resumen de cotización</div>
+//
+//    <div class="quote-summary-panel" style="margin-top:12px">
+//      <div class="quote-summary-panel__title">${state.selectedPackage ? 'Paquete seleccionado' : 'Selecciona productos'}</div>
+//      <div class="review-row"><span>Instalado</span><b id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</b></div>
+//      <div class="review-row"><span>Producción estimada</span><b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b></div>
+//      <div class="review-row"><span>Cobertura</span><b id="summaryCoverage">${coverage == null ? 'Pendiente' : `${coverage}%`}</b></div>
+//      <div class="review-row"><span>Ahorro estimado</span><b id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</b></div>
+//      <div class="review-row"><span>Total cotización</span><b id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</b></div>
+//    </div>
+//
+//    <div class="grid cols-2" style="margin-top:12px">
+//      <div class="kpi quote-kpi-card">
+//        <div class="kpi__label">Paneles</div>
+//        <div class="kpi__value">${formatNumber(q.paneles || 0)}</div>
+//      </div>
+//      <div class="kpi quote-kpi-card">
+//        <div class="kpi__label">Retorno</div>
+//        <div class="kpi__value">${q.retornoAnios ? `${q.retornoAnios} años` : '—'}</div>
+//      </div>
+//    </div>
+//
+//    <div id="step2Alerts" style="margin-top:12px">
+//      ${state.selectedPackage || (state.receipt?.insumos || []).length
+//            ? '<div class="review-ok">Productos listos para generar la cotización.</div>'
+//            : '<div class="review-alert">Selecciona un paquete o agrega productos para calcular cobertura.</div>'}
+//    </div>
+//  `;
+//}
 
 function secomV2RefreshPackageSummary() {
     const q = secomV2SyncPackage();
@@ -5299,60 +5325,60 @@ applyPackagePreset = function (packageKey) {
         icon: 'package'
     });
 };
-
-function secomV2WirePackage() {
-    if (!state.receipt) {
-        gotoStep(1);
-        return;
-    }
-
-    $('#btnBackPackage')?.addEventListener('click', () => gotoStep(3));
-
-    $('#btnNextPackage')?.addEventListener('click', () => {
-        const q = secomV2SyncPackage();
-        const msg = $('#msg2');
-
-        if (!state.client.nombre) {
-            state.client.nombre = state.receipt?.nombre || '';
-        }
-
-        if (!state.client.nombre) {
-            msg.textContent = 'Por favor, captura el nombre del cliente en la validación del recibo.';
-            toast({title: 'Falta información', message: 'El nombre del cliente es obligatorio.', icon: 'alert-triangle'});
-            return;
-        }
-
-        if (!state.receipt.servicio) {
-            msg.textContent = 'Por favor, captura el número de servicio del recibo.';
-            toast({title: 'Dato crítico faltante', message: 'El número de servicio es obligatorio para continuar.', icon: 'alert-triangle'});
-            return;
-        }
-
-        state.quote = q;
-        gotoStep(5);
-    });
-
-    $$('#route-cotizador [data-package]').forEach(btn => {
-        btn.addEventListener('click', () => applyPackagePreset(btn.dataset.package));
-    });
-
-    $('#btnClearPackage')?.addEventListener('click', () => {
-        state.selectedPackage = '';
-        if (state.receipt?.instalacion) {
-            state.receipt.instalacion.paqueteSeleccionado = '';
-        }
-        renderWizard();
-        toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
-    });
-
-    ['#mPanelModelo', '#mPanelDim', '#mInversor', '#mTecho', '#mSombras', '#mNotasFisicas'].forEach(id => {
-        $(id)?.addEventListener('input', debounce(secomV2RefreshPackageSummary, 120));
-        $(id)?.addEventListener('change', debounce(secomV2RefreshPackageSummary, 120));
-    });
-
-    setupInsumosCrud();
-    secomV2RefreshPackageSummary();
-}
+//
+//function secomV2WirePackage() {
+//    if (!state.receipt) {
+//        gotoStep(1);
+//        return;
+//    }
+//
+//    $('#btnBackPackage')?.addEventListener('click', () => gotoStep(3));
+//
+//    $('#btnNextPackage')?.addEventListener('click', () => {
+//        const q = secomV2SyncPackage();
+//        const msg = $('#msg2');
+//
+//        if (!state.client.nombre) {
+//            state.client.nombre = state.receipt?.nombre || '';
+//        }
+//
+//        if (!state.client.nombre) {
+//            msg.textContent = 'Por favor, captura el nombre del cliente en la validación del recibo.';
+//            toast({title: 'Falta información', message: 'El nombre del cliente es obligatorio.', icon: 'alert-triangle'});
+//            return;
+//        }
+//
+//        if (!state.receipt.servicio) {
+//            msg.textContent = 'Por favor, captura el número de servicio del recibo.';
+//            toast({title: 'Dato crítico faltante', message: 'El número de servicio es obligatorio para continuar.', icon: 'alert-triangle'});
+//            return;
+//        }
+//
+//        state.quote = q;
+//        gotoStep(5);
+//    });
+//
+//    $$('#route-cotizador [data-package]').forEach(btn => {
+//        btn.addEventListener('click', () => applyPackagePreset(btn.dataset.package));
+//    });
+//
+//    $('#btnClearPackage')?.addEventListener('click', () => {
+//        state.selectedPackage = '';
+//        if (state.receipt?.instalacion) {
+//            state.receipt.instalacion.paqueteSeleccionado = '';
+//        }
+//        renderWizard();
+//        toast({title: 'Paquete retirado', message: 'Puedes mantener insumos manuales o cargar otro paquete.', icon: 'eraser'});
+//    });
+//
+//    ['#mPanelModelo', '#mPanelDim', '#mInversor', '#mTecho', '#mSombras', '#mNotasFisicas'].forEach(id => {
+//        $(id)?.addEventListener('input', debounce(secomV2RefreshPackageSummary, 120));
+//        $(id)?.addEventListener('change', debounce(secomV2RefreshPackageSummary, 120));
+//    });
+//
+//    setupInsumosCrud();
+//    secomV2RefreshPackageSummary();
+//}
 
 /* ------------------------------
    Paso 5: Ajustar nombre y regreso
@@ -5724,5 +5750,724 @@ function secomV2RenderPrecalcRight() {
       La cobertura se calculará después de seleccionar paquete o productos.
     </div>
   `;
+}
+/* =========================================================
+   SECOM V3 - PRODUCT CATALOG / CARRITO / PRECIO POR PANEL
+   Pegar este bloque ANTES del init(); final
+   ========================================================= */
+
+function secomV3EnsureProductState() {
+    if (!state.receipt) {
+        state.receipt = createEmptyReceiptData(state.selectedTariff);
+    }
+
+    state.receipt.insumos = Array.isArray(state.receipt.insumos)
+        ? state.receipt.insumos
+        : [];
+
+    state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct))
+        ? Number(state.receipt.impuestosPct)
+        : (state.preferences?.quoteDefaults?.taxPct || 0.16);
+
+    state.productCatalog = state.productCatalog || {
+        activeCategory: 'paneles'
+    };
+
+    state.receipt.precioPanelInstalado = Number.isFinite(Number(state.receipt.precioPanelInstalado))
+        ? Number(state.receipt.precioPanelInstalado)
+        : 10000;
+}
+
+function secomV3NormalizeCategory(value = '') {
+    const txt = String(value || '').toLowerCase();
+
+    if (txt.includes('panel')) return 'paneles';
+    if (txt.includes('inversor')) return 'inversores';
+    if (txt.includes('estructura') || txt.includes('montaje') || txt.includes('riel') || txt.includes('soporte')) return 'montaje';
+    if (txt.includes('proteccion') || txt.includes('protección') || txt.includes('break') || txt.includes('interruptor') || txt.includes('fusible')) return 'proteccion';
+    return 'otros';
+}
+
+function secomV3GetProductIcon(category) {
+    const icons = {
+        paneles: 'zap',
+        inversores: 'cpu',
+        montaje: 'wrench',
+        proteccion: 'shield-check',
+        otros: 'package'
+    };
+
+    return icons[category] || 'package';
+}
+
+function secomV3GetCategoryLabel(category) {
+    const labels = {
+        paneles: 'Paneles',
+        inversores: 'Inversores',
+        montaje: 'Montaje',
+        proteccion: 'Protección',
+        otros: 'Otros'
+    };
+
+    return labels[category] || 'Otros';
+}
+
+function secomV3ExtractWatts(item = {}) {
+    const direct = Number(item.watts || item.capacidad || item.potencia || 0);
+
+    if (Number.isFinite(direct) && direct > 0) {
+        return direct;
+    }
+
+    const text = `${item.codigo || ''} ${item.descripcion || ''} ${item.nombre || ''}`;
+    const match = text.match(/(\d{3,4})\s*w/i);
+
+    return match ? Number(match[1]) : 0;
+}
+
+function secomV3GetCatalogProducts() {
+    const source = Array.isArray(INSUMO_CATALOG) ? INSUMO_CATALOG : [];
+
+    const products = source
+        .filter(item => item && item.activo !== false)
+        .map((item, index) => {
+            const descripcion = item.descripcion || item.nombre || item.codigo || 'Producto';
+            const category = secomV3NormalizeCategory(`${item.categoria || ''} ${descripcion} ${item.codigo || ''}`);
+            const watts = secomV3ExtractWatts(item);
+
+            return {
+                id: String(item.id ?? item.codigo ?? index),
+                codigo: item.codigo || `PROD-${index + 1}`,
+                nombre: descripcion,
+                marca: item.marca || item.proveedor || '',
+                categoria: category,
+                unidad: item.unidad || 'PZA',
+                precio: Number(item.precio || 0),
+                impuestoPct: Number(item.impuestoPct ?? 0.16),
+                watts
+            };
+        });
+
+    return products;
+}
+
+function secomV3GetProductsByCategory(category) {
+    return secomV3GetCatalogProducts().filter(p => p.categoria === category);
+}
+
+function secomV3IsPanelItem(item = {}) {
+    const txt = `${item.codigo || ''} ${item.descripcion || ''} ${item.categoria || ''}`.toLowerCase();
+
+    return txt.includes('panel') || Number(item.watts || 0) > 0;
+}
+
+function secomV3PanelItems() {
+    secomV3EnsureProductState();
+
+    return state.receipt.insumos.filter(item => secomV3IsPanelItem(item));
+}
+
+function secomV3SelectedPanelCount() {
+    return secomV3PanelItems().reduce((acc, item) => acc + Number(item.cantidad || 0), 0);
+}
+
+function secomV3InstalledWatts() {
+    return secomV3PanelItems().reduce((acc, item) => {
+        return acc + (Number(item.cantidad || 0) * Number(item.watts || 0));
+    }, 0);
+}
+
+function secomV3ComputeTotals() {
+    secomV3EnsureProductState();
+
+    const subtotal = state.receipt.insumos.reduce((acc, item) => {
+        return acc + (Number(item.cantidad || 0) * Number(item.precio || 0));
+    }, 0);
+
+    const ivaPct = Number(state.receipt.impuestosPct ?? 0.16);
+    const iva = subtotal * ivaPct;
+    const total = subtotal + iva;
+
+    return {
+        subtotal,
+        iva,
+        total,
+        ivaPct
+    };
+}
+
+function secomV3CurrentQuote() {
+    secomV3EnsureProductState();
+
+    const base = currentStep2Quote();
+
+    const installedWatts = secomV3InstalledWatts();
+    const installedKwp = installedWatts / 1000;
+    const selectedPanelCount = secomV3SelectedPanelCount();
+
+    const yieldMonth = Number(state.params?.yieldKwhPerKwpMonth || 135);
+    const produccionMensual = installedKwp > 0 ? installedKwp * yieldMonth : Number(base.produccionMensual || 0);
+    const produccionAnual = produccionMensual * 12;
+
+    const consumoMensual = Number(base.consumoMensual || 0);
+    const coverage = consumoMensual > 0 && produccionMensual > 0
+        ? Math.round((produccionMensual / consumoMensual) * 1000) / 10
+        : null;
+
+    const totals = secomV3ComputeTotals();
+
+    const ahorroMensualBase = Number(base.ahorroMensual || 0);
+    const ahorroMensual = coverage == null
+        ? ahorroMensualBase
+        : Math.min(ahorroMensualBase, ahorroMensualBase * (coverage / 100));
+
+    const retornoAnios = ahorroMensual > 0 && totals.total > 0
+        ? Math.round((totals.total / (ahorroMensual * 12)) * 10) / 10
+        : 0;
+
+    return {
+        ...base,
+        kwp: installedKwp > 0 ? installedKwp : Number(base.kwp || 0),
+        paneles: selectedPanelCount > 0 ? selectedPanelCount : Number(base.paneles || 0),
+        wattsInstalados: installedWatts,
+        produccionMensual,
+        produccionAnual,
+        porcentajeCobertura: coverage,
+        ahorroMensual,
+        inversion: totals.total,
+        subtotalInsumos: totals.subtotal,
+        impuestosInsumos: totals.iva,
+        totalInsumos: totals.total,
+        retornoAnios
+    };
+}
+
+function secomV3RenderProductCard(product) {
+    const icon = secomV3GetProductIcon(product.categoria);
+    const isPanel = product.categoria === 'paneles';
+
+    return `
+        <div class="secom-product-card">
+            <div class="secom-product-card__top">
+                <div class="secom-product-card__icon">
+                    <i data-lucide="${icon}"></i>
+                </div>
+
+                <span class="badge">
+                    ${escapeHtml(secomV3GetCategoryLabel(product.categoria))}
+                </span>
+            </div>
+
+            <div class="secom-product-card__name">
+                ${escapeHtml(product.nombre)}
+            </div>
+
+            <div class="secom-product-card__meta">
+                ${escapeHtml(product.codigo || '')}
+                ${product.marca ? ` · ${escapeHtml(product.marca)}` : ''}
+            </div>
+
+            <div class="secom-product-card__specs">
+                ${isPanel && product.watts
+                    ? `<span>${formatNumber(product.watts)} W</span>`
+                    : `<span>${escapeHtml(product.unidad || 'PZA')}</span>`
+                }
+
+                <span>
+                    ${isPanel
+                        ? 'Precio por panel global'
+                        : formatCurrencyMXN(product.precio || 0)
+                    }
+                </span>
+            </div>
+
+            <button class="btn btn--primary secom-product-card__btn" data-add-product="${escapeAttr(product.id)}">
+                <i data-lucide="plus"></i>
+                Agregar
+            </button>
+        </div>
+    `;
+}
+
+function secomV3RenderSelectedProduct(item, index) {
+    const isPanel = secomV3IsPanelItem(item);
+
+    return `
+        <div class="secom-cart-item" data-cart-row="${index}">
+            <div class="secom-cart-item__icon">
+                <i data-lucide="${isPanel ? 'zap' : 'package'}"></i>
+            </div>
+
+            <div class="secom-cart-item__info">
+                <div class="secom-cart-item__name">
+                    ${escapeHtml(item.descripcion || 'Producto')}
+                </div>
+
+                <div class="secom-cart-item__meta">
+                    ${escapeHtml(item.codigo || '')}
+                    ${item.watts ? ` · ${formatNumber(item.watts)} W` : ''}
+                    · ${formatCurrencyMXN(item.precio || 0)}
+                </div>
+            </div>
+
+            <div class="secom-cart-item__qty">
+                <button class="icon-btn icon-btn--sm" data-cart-minus="${index}" type="button">
+                    <i data-lucide="minus"></i>
+                </button>
+
+                <input
+                    class="tbl-input secom-cart-qty"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="${escapeAttr(String(item.cantidad || 1))}"
+                    data-cart-qty="${index}"
+                />
+
+                <button class="icon-btn icon-btn--sm" data-cart-plus="${index}" type="button">
+                    <i data-lucide="plus"></i>
+                </button>
+            </div>
+
+            <div class="secom-cart-item__total">
+                ${formatCurrencyMXN(Number(item.cantidad || 0) * Number(item.precio || 0))}
+            </div>
+
+            <button class="icon-btn icon-btn--sm" data-cart-remove="${index}" type="button">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+    `;
+}
+
+function secomV2RenderPackageLeft() {
+    secomV3EnsureProductState();
+
+    const categories = ['paneles', 'inversores', 'montaje', 'proteccion', 'otros'];
+    const activeCategory = state.productCatalog?.activeCategory || 'paneles';
+    const products = secomV3GetProductsByCategory(activeCategory);
+    const selected = state.receipt.insumos || [];
+    const totals = secomV3ComputeTotals();
+    const q = secomV3CurrentQuote();
+
+    const coverage = q.porcentajeCobertura;
+    const coverageText = coverage == null ? '0%' : `${coverage}%`;
+    const coverageWidth = coverage == null ? 0 : Math.min(100, coverage);
+
+    return `
+        <div class="secom-products-full">
+
+            <div class="secom-products-head">
+                <div>
+                    <div class="card__title">Product Catalog</div>
+                    <div class="help">
+                        Selecciona productos para construir el sistema solar personalizado.
+                    </div>
+                </div>
+            </div>
+
+            <div class="secom-category-tabs">
+                ${categories.map(cat => `
+                    <button
+                        type="button"
+                        class="secom-category-tab ${activeCategory === cat ? 'is-active' : ''}"
+                        data-product-category="${cat}"
+                    >
+                        <i data-lucide="${secomV3GetProductIcon(cat)}"></i>
+                        ${escapeHtml(secomV3GetCategoryLabel(cat))}
+                    </button>
+                `).join('')}
+            </div>
+
+            <div class="secom-product-catalog secom-product-catalog--wide">
+                ${products.length
+                    ? products.map(secomV3RenderProductCard).join('')
+                    : `
+                        <div class="review-alert" style="width:100%">
+                            No hay productos registrados en esta categoría.
+                        </div>
+                    `
+                }
+            </div>
+
+            <div class="secom-commercial-card secom-commercial-card--below">
+                <div class="secom-commercial-card__icon">
+                    <i data-lucide="badge-dollar-sign"></i>
+                </div>
+
+                <div class="secom-commercial-card__body">
+                    <div class="secom-commercial-card__title">
+                        Precio global por panel instalado
+                    </div>
+
+                    <div class="help">
+                        Este precio se aplicará a todos los paneles agregados a esta cotización.
+                    </div>
+                </div>
+
+                <div class="field secom-commercial-card__input">
+                    <label>Precio por panel</label>
+                    <input
+                        id="precioPanelInstalado"
+                        type="number"
+                        min="0"
+                        step="100"
+                        value="${escapeAttr(String(state.receipt.precioPanelInstalado || 10000))}"
+                    />
+                </div>
+            </div>
+
+            <div class="secom-cart-panel">
+                <div class="secom-cart-panel__head">
+                    <div>
+                        <div class="card__title">Selected Products</div>
+                        <div class="help">Productos seleccionados para la cotización actual.</div>
+                    </div>
+
+                    <button class="btn" id="btnAddManualProduct" type="button">
+                        <i data-lucide="edit-3"></i>
+                        Agregar manual
+                    </button>
+                </div>
+
+                <div class="secom-cart-list">
+                    ${selected.length
+                        ? selected.map(secomV3RenderSelectedProduct).join('')
+                        : `
+                            <div class="empty" style="min-height:150px">
+                                <div class="empty__icon"><i data-lucide="shopping-cart"></i></div>
+                                <div class="card__title">No hay productos seleccionados</div>
+                                <div class="help">Agrega productos desde el catálogo superior.</div>
+                            </div>
+                        `
+                    }
+                </div>
+            </div>
+
+            <div class="secom-summary-bottom">
+                <div class="card__title">Quotation Summary</div>
+
+                <div class="secom-summary-bottom-grid">
+
+                    <div class="secom-summary-figma secom-summary-figma--blue">
+                        <div class="secom-summary-figma__label">
+                            <i data-lucide="zap"></i>
+                            Installed Capacity
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${Number(q.kwp || 0).toFixed(2)}
+                        </div>
+                        <div class="secom-summary-figma__unit">kWp</div>
+                    </div>
+
+                    <div class="secom-summary-figma secom-summary-figma--green">
+                        <div class="secom-summary-figma__label">
+                            <i data-lucide="trending-up"></i>
+                            Annual Production
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${formatNumber(q.produccionAnual || 0)}
+                        </div>
+                        <div class="secom-summary-figma__unit">kWh/year</div>
+                    </div>
+
+                    <div class="secom-summary-figma secom-summary-figma--purple">
+                        <div class="secom-summary-figma__label">
+                            <i data-lucide="battery"></i>
+                            Coverage
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${coverageText}
+                        </div>
+                        <div class="secom-summary-progress">
+                            <span style="width:${coverageWidth}%"></span>
+                        </div>
+                    </div>
+
+                    <div class="secom-summary-figma secom-summary-figma--yellow">
+                        <div class="secom-summary-figma__label">
+                            <i data-lucide="dollar-sign"></i>
+                            Monthly Savings
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${formatCurrencyMXN(q.ahorroMensual || 0)}
+                        </div>
+                        <div class="secom-summary-figma__unit">MXN/month</div>
+                    </div>
+
+                    <div class="secom-summary-figma">
+                        <div class="secom-summary-figma__label">
+                            <i data-lucide="chart-no-axes-combined"></i>
+                            Estimated ROI
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${q.retornoAnios || 0}
+                        </div>
+                        <div class="secom-summary-figma__unit">years</div>
+                    </div>
+
+                    <div class="secom-summary-figma secom-summary-figma--total">
+                        <div class="secom-summary-figma__label">
+                            Total Investment
+                        </div>
+                        <div class="secom-summary-figma__value">
+                            ${formatCurrencyMXN(q.inversion || 0)}
+                        </div>
+                        <div class="secom-summary-figma__unit">MXN taxes included</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="insumos-summary" style="margin-top:16px">
+                <div class="insumos-summary__row">
+                    <span>Subtotal</span>
+                    <b id="insSubtotal">${formatCurrencyMXN(totals.subtotal)}</b>
+                </div>
+
+                <div class="insumos-summary__row">
+                    <span>IVA (%)</span>
+                    <div style="display:flex; align-items:center; gap:10px">
+                        <input
+                            id="insTaxPct"
+                            class="insumos-summary__tax"
+                            type="number"
+                            min="0"
+                            max="30"
+                            step="0.5"
+                            value="${escapeAttr(String(Math.round(totals.ivaPct * 100 * 10) / 10))}"
+                        />
+                        <b id="insTaxes">${formatCurrencyMXN(totals.iva)}</b>
+                    </div>
+                </div>
+
+                <div class="insumos-summary__row insumos-summary__row--total">
+                    <span>Total</span>
+                    <b id="insTotal">${formatCurrencyMXN(totals.total)}</b>
+                </div>
+            </div>
+
+            <div class="wizard-actions" style="justify-content:space-between; margin-top:18px">
+                <button class="btn" id="btnBackPackage">
+                    <i data-lucide="arrow-left"></i>
+                    Volver
+                </button>
+
+                <button class="btn btn--success" id="btnNextPackage">
+                    <i data-lucide="arrow-right"></i>
+                    Generar cotización
+                </button>
+            </div>
+
+            <div class="help" id="msg2" style="margin-top:10px"></div>
+
+        </div>
+    `;
+}
+
+function secomV2RenderPackageRight() {
+    return '';
+}
+
+function secomV3RefreshPackageUI() {
+    const q = secomV3CurrentQuote();
+    state.quote = q;
+
+    const totals = secomV3ComputeTotals();
+
+    $('#insSubtotal') && ($('#insSubtotal').textContent = formatCurrencyMXN(totals.subtotal));
+    $('#insTaxes') && ($('#insTaxes').textContent = formatCurrencyMXN(totals.iva));
+    $('#insTotal') && ($('#insTotal').textContent = formatCurrencyMXN(totals.total));
+    $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
+    $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
+    $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
+    $('#summaryCoverage') && ($('#summaryCoverage').textContent = q.porcentajeCobertura == null ? 'Pendiente' : `${q.porcentajeCobertura}%`);
+}
+
+function secomV2WirePackage() {
+    secomV3EnsureProductState();
+
+    $('#btnBackPackage')?.addEventListener('click', () => {
+        gotoStep(3);
+    });
+
+    $('#btnNextPackage')?.addEventListener('click', () => {
+        const q = secomV3CurrentQuote();
+        const msg = $('#msg2');
+
+        if (!state.client.nombre) {
+            state.client.nombre = state.receipt?.nombre || '';
+        }
+
+        if (!state.client.nombre) {
+            if (msg) msg.textContent = 'Por favor, captura el nombre del cliente en la validación del recibo.';
+            toast({
+                title: 'Falta información',
+                message: 'El nombre del cliente es obligatorio.',
+                icon: 'alert-triangle'
+            });
+            return;
+        }
+
+        if (!state.receipt.servicio) {
+            if (msg) msg.textContent = 'Por favor, captura el número de servicio del recibo.';
+            toast({
+                title: 'Dato crítico faltante',
+                message: 'El número de servicio es obligatorio para continuar.',
+                icon: 'alert-triangle'
+            });
+            return;
+        }
+
+        state.quote = q;
+        gotoStep(5);
+    });
+
+    $$('#route-cotizador [data-product-category]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.productCatalog = state.productCatalog || {};
+            state.productCatalog.activeCategory = btn.dataset.productCategory || 'paneles';
+            renderWizard();
+        });
+    });
+
+    $('#precioPanelInstalado')?.addEventListener('input', debounce(() => {
+        const precio = secomV2Number($('#precioPanelInstalado')?.value, 10000);
+        state.receipt.precioPanelInstalado = Math.max(0, precio);
+
+        state.receipt.insumos = state.receipt.insumos.map(item => {
+            if (secomV3IsPanelItem(item)) {
+                return {
+                    ...item,
+                    precio: state.receipt.precioPanelInstalado
+                };
+            }
+
+            return item;
+        });
+
+        state.quote = secomV3CurrentQuote();
+        renderWizard();
+    }, 180));
+
+    $$('#route-cotizador [data-add-product]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = String(btn.dataset.addProduct || '');
+            const product = secomV3GetCatalogProducts().find(p => String(p.id) === id);
+
+            if (!product) {
+                return;
+            }
+
+            const isPanel = product.categoria === 'paneles';
+            const precioFinal = isPanel
+                ? Number(state.receipt.precioPanelInstalado || 10000)
+                : Number(product.precio || 0);
+
+            const existingIndex = state.receipt.insumos.findIndex(item => String(item.codigo) === String(product.codigo));
+
+            if (existingIndex >= 0) {
+                state.receipt.insumos[existingIndex].cantidad = Number(state.receipt.insumos[existingIndex].cantidad || 0) + 1;
+                if (isPanel) {
+                    state.receipt.insumos[existingIndex].precio = precioFinal;
+                    state.receipt.insumos[existingIndex].watts = product.watts || state.receipt.insumos[existingIndex].watts || 0;
+                }
+            } else {
+                state.receipt.insumos.push({
+                    catalogId: product.id,
+                    codigo: product.codigo,
+                    descripcion: product.nombre,
+                    cantidad: 1,
+                    unidad: product.unidad || 'PZA',
+                    precio: precioFinal,
+                    impuestoPct: product.impuestoPct ?? 0.16,
+                    categoria: product.categoria,
+                    watts: product.watts || 0
+                });
+            }
+
+            state.selectedPackage = '';
+            state.quote = secomV3CurrentQuote();
+
+            renderWizard();
+
+            toast({
+                title: 'Producto agregado',
+                message: product.nombre,
+                icon: 'check-circle'
+            });
+        });
+    });
+
+    $('#btnAddManualProduct')?.addEventListener('click', () => {
+        state.receipt.insumos.push({
+            codigo: '',
+            descripcion: 'Producto manual',
+            cantidad: 1,
+            unidad: 'PZA',
+            precio: 0,
+            impuestoPct: state.receipt.impuestosPct ?? 0.16,
+            categoria: 'otros',
+            watts: 0
+        });
+
+        state.quote = secomV3CurrentQuote();
+        renderWizard();
+    });
+
+    $$('#route-cotizador [data-cart-plus]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.cartPlus);
+            if (!state.receipt.insumos[idx]) return;
+
+            state.receipt.insumos[idx].cantidad = Number(state.receipt.insumos[idx].cantidad || 0) + 1;
+            state.quote = secomV3CurrentQuote();
+            renderWizard();
+        });
+    });
+
+    $$('#route-cotizador [data-cart-minus]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.cartMinus);
+            if (!state.receipt.insumos[idx]) return;
+
+            const next = Math.max(1, Number(state.receipt.insumos[idx].cantidad || 1) - 1);
+            state.receipt.insumos[idx].cantidad = next;
+            state.quote = secomV3CurrentQuote();
+            renderWizard();
+        });
+    });
+
+    $$('#route-cotizador [data-cart-qty]').forEach(input => {
+        input.addEventListener('input', debounce(() => {
+            const idx = Number(input.dataset.cartQty);
+            if (!state.receipt.insumos[idx]) return;
+
+            const qty = Math.max(1, secomV2Number(input.value, 1));
+            state.receipt.insumos[idx].cantidad = qty;
+            state.quote = secomV3CurrentQuote();
+            renderWizard();
+        }, 180));
+    });
+
+    $$('#route-cotizador [data-cart-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.cartRemove);
+            if (!Number.isFinite(idx)) return;
+
+            state.receipt.insumos.splice(idx, 1);
+            state.quote = secomV3CurrentQuote();
+            renderWizard();
+        });
+    });
+
+    $('#insTaxPct')?.addEventListener('input', debounce(() => {
+        const pctInput = secomV2Number($('#insTaxPct')?.value, 16);
+        state.receipt.impuestosPct = Math.max(0, Math.min(30, pctInput)) / 100;
+        state.quote = secomV3CurrentQuote();
+        renderWizard();
+    }, 180));
+
+    window.lucide?.createIcons();
 }
 init();

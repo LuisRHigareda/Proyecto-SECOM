@@ -1988,4 +1988,462 @@ button, input, select, textarea{
 .receipt-info-card input::placeholder,
 .receipt-info-card textarea::placeholder{
     color:rgba(255,255,255,.35);
+}/* =========================================================
+   SECOM V3 - PRODUCTOS / CARRITO / SUMMARY FINAL
+   ========================================================= */
+
+.wizard-grid.wizard-grid--products{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    grid-template-columns:none !important;
+}
+
+.wizard-grid.wizard-grid--products #wizardLeft{
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.wizard-grid.wizard-grid--products #wizardRight{
+    display:none !important;
+    width:0 !important;
+    max-width:0 !important;
+    overflow:hidden !important;
+}
+
+.wizard-grid.wizard-grid--products #wizardLeft > .card{
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.secom-products-full{
+    width:100%;
+}
+
+.secom-products-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:14px;
+    margin-bottom:14px;
+}
+
+.secom-category-tabs{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-top:18px;
+}
+
+.secom-category-tab{
+    border:1px solid var(--border);
+    background:var(--card);
+    color:var(--text);
+    border-radius:999px;
+    padding:11px 16px;
+    display:inline-flex;
+    align-items:center;
+    gap:9px;
+    cursor:pointer;
+    font-weight:700;
+}
+
+.secom-category-tab svg{
+    width:18px;
+    height:18px;
+}
+
+.secom-category-tab.is-active{
+    background:rgba(59,130,246,.22);
+    border-color:rgba(59,130,246,.50);
+}
+
+.secom-product-catalog{
+    width:100% !important;
+    display:grid !important;
+    grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)) !important;
+    gap:18px !important;
+    margin-top:20px;
+}
+
+.secom-product-card{
+    width:100%;
+    min-height:260px;
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:24px;
+    padding:20px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)),
+        rgba(15,23,42,.82);
+    transition:.18s ease;
+}
+
+.secom-product-card:hover{
+    transform:translateY(-2px);
+    border-color:rgba(59,130,246,.45);
+}
+
+.secom-product-card__top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+}
+
+.secom-product-card__icon{
+    width:52px;
+    height:52px;
+    border-radius:16px;
+    display:grid;
+    place-items:center;
+    background:rgba(59,130,246,.16);
+    color:#60a5fa;
+}
+
+.secom-product-card__icon svg{
+    width:24px;
+    height:24px;
+}
+
+.secom-product-card__name{
+    margin-top:18px;
+    font-weight:900;
+    font-size:18px;
+    line-height:1.25;
+}
+
+.secom-product-card__meta{
+    margin-top:8px;
+    color:var(--muted);
+    font-size:13px;
+}
+
+.secom-product-card__specs{
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    margin-top:18px;
+    color:var(--text);
+    font-size:14px;
+    font-weight:800;
+}
+
+.secom-product-card__btn{
+    width:100%;
+    justify-content:center;
+    margin-top:20px;
+}
+
+.secom-commercial-card{
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr) 240px;
+    align-items:center;
+    gap:14px;
+    padding:18px;
+    border-radius:22px;
+    border:1px solid rgba(59,130,246,.22);
+    background:
+        radial-gradient(circle at top left, rgba(59,130,246,.18), transparent 36%),
+        rgba(15,23,42,.72);
+    margin-top:22px;
+    margin-bottom:20px;
+}
+
+.secom-commercial-card__icon{
+    width:52px;
+    height:52px;
+    border-radius:16px;
+    display:grid;
+    place-items:center;
+    background:rgba(59,130,246,.16);
+    color:#60a5fa;
+}
+
+.secom-commercial-card__icon svg{
+    width:24px;
+    height:24px;
+}
+
+.secom-commercial-card__title{
+    font-weight:900;
+    font-size:15px;
+}
+
+.secom-cart-panel{
+    margin-top:20px;
+    border:1px solid var(--border);
+    border-radius:24px;
+    padding:18px;
+    background:rgba(255,255,255,.035);
+}
+
+.secom-cart-panel__head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    margin-bottom:14px;
+}
+
+.secom-cart-list{
+    display:grid;
+    gap:12px;
+}
+
+.secom-cart-item{
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr) auto auto auto;
+    gap:12px;
+    align-items:center;
+    padding:14px;
+    border-radius:18px;
+    border:1px solid var(--border);
+    background:rgba(255,255,255,.035);
+}
+
+.secom-cart-item__icon{
+    width:44px;
+    height:44px;
+    border-radius:14px;
+    display:grid;
+    place-items:center;
+    background:rgba(59,130,246,.14);
+    color:#60a5fa;
+}
+
+.secom-cart-item__name{
+    font-weight:900;
+    font-size:14px;
+}
+
+.secom-cart-item__meta{
+    color:var(--muted);
+    font-size:12px;
+    margin-top:3px;
+}
+
+.secom-cart-item__qty{
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+
+.secom-cart-qty{
+    width:62px;
+    text-align:center;
+}
+
+.secom-cart-item__total{
+    min-width:120px;
+    text-align:right;
+    font-weight:900;
+}
+
+.secom-summary-bottom{
+    width:100%;
+    margin-top:24px;
+    padding:24px;
+    border-radius:28px;
+    border:1px solid rgba(255,255,255,.10);
+    background:
+        radial-gradient(circle at top left, rgba(59,130,246,.10), transparent 34%),
+        linear-gradient(180deg, rgba(15,23,42,.90), rgba(2,6,23,.94));
+    overflow:hidden;
+}
+
+.secom-summary-bottom-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+    gap:16px;
+    margin-top:18px;
+}
+
+.secom-summary-figma{
+    min-width:0;
+    min-height:150px;
+    padding:22px;
+    border-radius:24px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.045);
+    overflow:hidden;
+}
+
+.secom-summary-figma--blue{
+    background:radial-gradient(circle at top left, rgba(59,130,246,.18), transparent 36%), rgba(15,23,42,.86);
+    border-color:rgba(59,130,246,.25);
+}
+
+.secom-summary-figma--green{
+    background:radial-gradient(circle at top left, rgba(16,185,129,.18), transparent 36%), rgba(15,23,42,.86);
+    border-color:rgba(16,185,129,.25);
+}
+
+.secom-summary-figma--purple{
+    background:radial-gradient(circle at top left, rgba(168,85,247,.18), transparent 36%), rgba(15,23,42,.86);
+    border-color:rgba(168,85,247,.25);
+}
+
+.secom-summary-figma--yellow{
+    background:radial-gradient(circle at top left, rgba(234,179,8,.18), transparent 36%), rgba(15,23,42,.86);
+    border-color:rgba(234,179,8,.25);
+}
+
+.secom-summary-figma--total{
+    background:radial-gradient(circle at top left, rgba(255,255,255,.12), transparent 36%), rgba(15,23,42,.90);
+}
+
+.secom-summary-figma__label{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--muted);
+    font-size:14px;
+    margin-bottom:16px;
+}
+
+.secom-summary-figma__label svg{
+    width:18px;
+    height:18px;
+    color:#60a5fa;
+}
+
+.secom-summary-figma__value{
+    font-size:34px;
+    font-weight:950;
+    color:#fff;
+    line-height:1;
+    word-break:break-word;
+}
+
+.secom-summary-figma__unit{
+    margin-top:8px;
+    color:#60a5fa;
+    font-weight:700;
+}
+
+.secom-summary-progress{
+    margin-top:18px;
+    width:100%;
+    height:10px;
+    border-radius:999px;
+    background:rgba(255,255,255,.12);
+    overflow:hidden;
+}
+
+.secom-summary-progress span{
+    display:block;
+    height:100%;
+    border-radius:999px;
+    background:#a855f7;
+}
+
+@media(max-width:1180px){
+    .secom-commercial-card{
+        grid-template-columns:1fr;
+    }
+}
+
+@media(max-width:760px){
+    .secom-product-catalog,
+    .secom-summary-bottom-grid{
+        grid-template-columns:1fr !important;
+    }
+
+    .secom-cart-item{
+        grid-template-columns:1fr;
+    }
+
+    .secom-cart-item__total{
+        text-align:left;
+    }
+}
+/* FIX DEFINITIVO PASO 4 PRODUCTOS */
+
+.wizard-grid.wizard-grid--products{
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.wizard-grid.wizard-grid--products #wizardLeft{
+    grid-column:1 / -1 !important;
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.wizard-grid.wizard-grid--products #wizardRight{
+    display:none !important;
+    visibility:hidden !important;
+    width:0 !important;
+    max-width:0 !important;
+    min-width:0 !important;
+    padding:0 !important;
+    margin:0 !important;
+    overflow:hidden !important;
+}
+
+.wizard-grid.wizard-grid--products .secom-product-catalog{
+    grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)) !important;
+    width:100% !important;
+}
+/* =========================================================
+   FIX DEFINITIVO PASO PRODUCTOS FULL WIDTH
+   ========================================================= */
+
+#wizardGrid.wizard-grid--products{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    grid-template-columns:none !important;
+}
+
+#wizardGrid.wizard-grid--products #wizardLeft{
+    width:100% !important;
+    max-width:100% !important;
+}
+
+#wizardGrid.wizard-grid--products #wizardRight{
+    display:none !important;
+}
+
+#wizardGrid.wizard-grid--products .card{
+    width:100% !important;
+    max-width:100% !important;
+}
+
+#wizardGrid.wizard-grid--products .secom-product-catalog{
+    width:100% !important;
+    display:grid !important;
+    grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)) !important;
+    gap:16px !important;
+}
+/* FIX REAL PASO 4: SOLO UNA COLUMNA */
+
+#wizardGrid.wizard-grid--products,
+.wizard-grid.wizard-grid--products{
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    width:100% !important;
+    max-width:100% !important;
+}
+
+#wizardGrid.wizard-grid--products .wizard-products-only,
+.wizard-grid.wizard-grid--products .wizard-products-only{
+    width:100% !important;
+    max-width:100% !important;
+    grid-column:1 / -1 !important;
+}
+
+#wizardGrid.wizard-grid--products #wizardRight,
+.wizard-grid.wizard-grid--products #wizardRight{
+    display:none !important;
+}
+
+#wizardGrid.wizard-grid--products .secom-product-catalog,
+.wizard-grid.wizard-grid--products .secom-product-catalog{
+    width:100% !important;
+    display:grid !important;
+    grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)) !important;
+    gap:16px !important;
 }
