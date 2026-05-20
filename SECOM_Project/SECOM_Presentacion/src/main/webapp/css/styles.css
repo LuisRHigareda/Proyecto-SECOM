@@ -2447,3 +2447,22 @@ button, input, select, textarea{
     grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)) !important;
     gap:16px !important;
 }
+/* PASO 4 FULL WIDTH REAL */
+
+/* FIX REAL PASO PRODUCTOS FULL WIDTH */
+
+.quote-flow-grid.quote-flow-grid--single{
+    display:block !important;
+    grid-template-columns:none !important;
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.quote-flow-grid.quote-flow-grid--single .quote-main-card--full{
+    width:100% !important;
+    max-width:100% !important;
+}
+
+.quote-flow-grid.quote-flow-grid--single #wizardRight{
+    display:none !important;
+}

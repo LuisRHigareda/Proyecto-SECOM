@@ -417,6 +417,8 @@ function renderCotizadorRoute() {
                 <div id="wizardRight"></div>
             </div>
 
+            <div id="wizardSingle" class="wizard-single"></div>
+
         </div>
     `;
 
@@ -431,7 +433,6 @@ function renderCotizadorRoute() {
 
     window.lucide?.createIcons();
 }
-
 function renderTariffSelector() {
     const buttons = TARIFFS.filter(t => t.kind !== 'cashvolt').map(t => {
         return `
@@ -720,32 +721,20 @@ function restoreWizardRight() {
     }
 }
 function renderWizard() {
-    const grid = document.getElementById('wizardGrid') || document.querySelector('.wizard-grid');
+    const grid = document.getElementById('wizardGrid');
+    const single = document.getElementById('wizardSingle');
 
-    if (!grid) return;
+    if (!grid || !single) return;
 
-    grid.classList.remove('wizard-grid--products');
-
-    grid.style.removeProperty('display');
-    grid.style.removeProperty('grid-template-columns');
-    grid.style.removeProperty('width');
-    grid.style.removeProperty('max-width');
+    grid.style.display = 'grid';
+    single.style.display = 'none';
+    single.innerHTML = '';
 
     if (state.wizardStep === 4) {
-        grid.classList.add('wizard-grid--products');
+        grid.style.display = 'none';
 
-        grid.style.setProperty('display', 'grid', 'important');
-        grid.style.setProperty('grid-template-columns', '1fr', 'important');
-        grid.style.setProperty('width', '100%', 'important');
-        grid.style.setProperty('max-width', '100%', 'important');
-
-        grid.innerHTML = `
-            <div id="wizardLeft" class="wizard-products-only"></div>
-        `;
-
-        const left = document.getElementById('wizardLeft');
-
-        left.innerHTML = secomV2RenderPackageLeft();
+        single.style.display = 'block';
+        single.innerHTML = secomV2RenderPackageLeft();
 
         secomV2WirePackage();
         window.lucide?.createIcons();
@@ -4359,6 +4348,30 @@ buildStepper = function () {
 ------------------------------ */
 
 renderWizard = function () {
+    const grid = document.querySelector('.quote-flow-grid');
+
+    if (!grid) return;
+
+    if (state.wizardStep === 4) {
+        grid.classList.add('quote-flow-grid--single');
+        grid.innerHTML = `
+            <div class="card quote-main-card quote-main-card--full" id="wizardLeft"></div>
+        `;
+
+        const left = $('#wizardLeft');
+        left.innerHTML = secomV2RenderPackageLeft();
+
+        secomV2WirePackage();
+        window.lucide?.createIcons();
+        return;
+    }
+
+    grid.classList.remove('quote-flow-grid--single');
+    grid.innerHTML = `
+        <div class="card quote-main-card" id="wizardLeft"></div>
+        <div class="card quote-side-card" id="wizardRight"></div>
+    `;
+
     const left = $('#wizardLeft');
     const right = $('#wizardRight');
 
@@ -4366,18 +4379,17 @@ renderWizard = function () {
         left.innerHTML = renderStep1Left();
         right.innerHTML = renderStep1Right();
         wireStep1();
+
     } else if (state.wizardStep === 2) {
         left.innerHTML = secomV2RenderConsumptionLeft();
         right.innerHTML = secomV2RenderConsumptionRight();
         secomV2WireConsumption();
+
     } else if (state.wizardStep === 3) {
         left.innerHTML = secomV2RenderPrecalcLeft();
         right.innerHTML = secomV2RenderPrecalcRight();
         secomV2WirePrecalc();
-    } else if (state.wizardStep === 4) {
-        left.innerHTML = secomV2RenderPackageLeft();
-        right.innerHTML = secomV2RenderPackageRight();
-        secomV2WirePackage();
+
     } else {
         left.innerHTML = renderStep4Left();
         right.innerHTML = renderStep4Right();
@@ -5539,38 +5551,7 @@ buildStepper = function () {
     window.lucide?.createIcons();
 };
 
-renderWizard = function () {
-    const left = $('#wizardLeft');
-    const right = $('#wizardRight');
 
-    if (state.wizardStep === 1) {
-        left.innerHTML = renderStep1Left();
-        right.innerHTML = renderStep1Right();
-        wireStep1();
-
-    } else if (state.wizardStep === 2) {
-        left.innerHTML = secomV2RenderConsumptionLeft();
-        right.innerHTML = secomV2RenderConsumptionRight();
-        secomV2WireConsumption();
-
-    } else if (state.wizardStep === 3) {
-        left.innerHTML = secomV2RenderPrecalcLeft();
-        right.innerHTML = secomV2RenderPrecalcRight();
-        secomV2WirePrecalc();
-
-    } else if (state.wizardStep === 4) {
-        left.innerHTML = secomV2RenderPackageLeft();
-        right.innerHTML = secomV2RenderPackageRight();
-        secomV2WirePackage();
-
-    } else {
-        left.innerHTML = renderStep4Left();
-        right.innerHTML = renderStep4Right();
-        wireStep4();
-    }
-
-    window.lucide?.createIcons();
-};
 
 secomV2RenderConsumptionLeft = function () {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
