@@ -721,33 +721,13 @@ function restoreWizardRight() {
     }
 }
 function renderWizard() {
-    const grid = document.getElementById('wizardGrid');
-    const single = document.getElementById('wizardSingle');
+    const left = $('#wizardLeft');
+    const right = $('#wizardRight');
+    const grid = document.querySelector('.wizard-grid, .quote-flow-grid');
 
-    if (!grid || !single) return;
+    if (!left || !right) return;
 
-    grid.style.display = 'grid';
-    single.style.display = 'none';
-    single.innerHTML = '';
-
-    if (state.wizardStep === 4) {
-        grid.style.display = 'none';
-
-        single.style.display = 'block';
-        single.innerHTML = secomV2RenderPackageLeft();
-
-        secomV2WirePackage();
-        window.lucide?.createIcons();
-        return;
-    }
-
-    grid.innerHTML = `
-        <div id="wizardLeft"></div>
-        <div id="wizardRight"></div>
-    `;
-
-    const left = document.getElementById('wizardLeft');
-    const right = document.getElementById('wizardRight');
+    grid?.classList.remove('wizard-grid--products', 'wizard-grid--consumption');
 
     if (state.wizardStep === 1) {
         left.innerHTML = renderStep1Left();
@@ -755,6 +735,8 @@ function renderWizard() {
         wireStep1();
 
     } else if (state.wizardStep === 2) {
+        grid?.classList.add('wizard-grid--consumption');
+
         left.innerHTML = secomV2RenderConsumptionLeft();
         right.innerHTML = secomV2RenderConsumptionRight();
         secomV2WireConsumption();
@@ -763,6 +745,11 @@ function renderWizard() {
         left.innerHTML = secomV2RenderPrecalcLeft();
         right.innerHTML = secomV2RenderPrecalcRight();
         secomV2WirePrecalc();
+
+    } else if (state.wizardStep === 4) {
+        left.innerHTML = secomV2RenderPackageLeft();
+        right.innerHTML = secomV2RenderPackageRight();
+        secomV2WirePackage();
 
     } else {
         left.innerHTML = renderStep4Left();
@@ -1594,40 +1581,91 @@ function renderHistoryTable() {
 }
 
 function renderChart() {
-    const el = $('#chart');
-    if (!el || !window.Chart)
-        return;
+    const canvas = document.getElementById('chart');
+    if (!canvas || typeof Chart === 'undefined') return;
 
-    // Destroy previous
-    if (state.chart) {
-        state.chart.destroy();
-        state.chart = null;
+    const r = state.receipt || {};
+    const hist = (r.historial || []).slice(-12);
+
+    const labels = hist.map((_, i) => `P${i + 1}`);
+    const consumos = hist.map(h => Number(h.kwh || 0));
+    const pagos = hist.map(h => Number(h.pago || 0));
+
+    if (window.secomChart) {
+        window.secomChart.destroy();
     }
 
-    const hist = (state.receipt?.historial || []).slice(-12);
-    const labels = hist.map((_, i) => `P${i + 1}`);
-    const consumos = hist.map(h => h.kwh);
-    const pagos = hist.map(h => h.pago);
-
-    state.chart = new window.Chart(el, {
-        type: 'line',
+    window.secomChart = new Chart(canvas, {
+        type: 'bar',
         data: {
             labels,
             datasets: [
-                {label: 'Consumo (kWh)', data: consumos, tension: 0.25},
-                {label: 'Pago (MXN)', data: pagos, tension: 0.25},
+                {
+                    type: 'bar',
+                    label: 'Consumo (kWh)',
+                    data: consumos,
+                    yAxisID: 'y',
+                    borderWidth: 1
+                },
+                {
+                    type: 'line',
+                    label: 'Pago (MXN)',
+                    data: pagos,
+                    yAxisID: 'y1',
+                    tension: 0.35,
+                    borderWidth: 3,
+                    pointRadius: 4
+                }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: {labels: {color: getComputedStyle(document.documentElement).getPropertyValue('--muted')}},
-                tooltip: {enabled: true},
-            },
             scales: {
-                x: {ticks: {color: getComputedStyle(document.documentElement).getPropertyValue('--muted')}, grid: {color: 'rgba(255,255,255,0.06)'}},
-                y: {ticks: {color: getComputedStyle(document.documentElement).getPropertyValue('--muted')}, grid: {color: 'rgba(255,255,255,0.06)'}},
+                x: {
+                    ticks: {
+                        color: '#cbd5e1'
+                    },
+                    grid: {
+                        color: 'rgba(255,255,255,.08)'
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'kWh',
+                        color: '#cbd5e1'
+                    },
+                    ticks: {
+                        color: '#cbd5e1'
+                    },
+                    grid: {
+                        color: 'rgba(255,255,255,.08)'
+                    }
+                },
+                y1: {
+                    beginAtZero: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'MXN',
+                        color: '#cbd5e1'
+                    },
+                    ticks: {
+                        color: '#cbd5e1'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#cbd5e1'
+                    }
+                }
             }
         }
     });
@@ -4785,7 +4823,7 @@ function secomV2RenderConsumptionLeft() {
                 </div>
 
                 <div class="consumption-kpi__label">
-                    CFE mensual
+                    CFE promedio $ 
                 </div>
 
                 <div class="consumption-kpi__value">
@@ -4881,6 +4919,24 @@ function secomV2RenderConsumptionLeft() {
     </div>
     `;
 }
+function secomV2GetHistoryPeriodLabel(h, i) {
+    const raw =
+        h?.periodo ||
+        h?.periodoRaw ||
+        h?.periodoFacturado ||
+        h?.fecha ||
+        h?.mes ||
+        h?.label ||
+        h?.nombrePeriodo ||
+        h?.rango ||
+        h?.descripcion ||
+        '';
+
+    return raw && String(raw).trim()
+        ? String(raw).trim()
+        : `P${i + 1}`;
+}
+
 function secomV2RenderConsumptionRight() {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const hist = (r?.historial || []).slice(-12);
@@ -4889,8 +4945,8 @@ function secomV2RenderConsumptionRight() {
     <div class="card__title">Tendencia de consumo</div>
     <div class="help">Gráfica y lista del historial detectado en el recibo.</div>
 
-    <div style="margin-top:12px; min-height:260px">
-      <canvas id="chart" height="220"></canvas>
+    <div class="consumption-chart-box">
+      <canvas id="chart" height="260"></canvas>
     </div>
 
     <div class="card__subtitle" style="margin-top:16px">Lista de consumos</div>
@@ -4908,7 +4964,7 @@ function secomV2RenderConsumptionRight() {
         <tbody>
           ${hist.length ? hist.map((h, i) => `
             <tr>
-              <td>P${i + 1}</td>
+              <td><b>${escapeHtml(secomV2GetHistoryPeriodLabel(h, i))}</b></td>
               <td><b>${formatNumber(h.kwh || 0)}</b></td>
               <td>${formatCurrencyMXN(h.pago || 0)}</td>
             </tr>
@@ -5552,16 +5608,35 @@ buildStepper = function () {
 };
 
 
-
 secomV2RenderConsumptionLeft = function () {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const q = currentStep2Quote();
 
+    const historial = Array.isArray(r?.historial) ? r.historial : [];
+
+    const pagos = historial
+        .map(h => Number(h?.pago || 0))
+        .filter(n => Number.isFinite(n) && n > 0);
+
+    const consumos = historial
+        .map(h => Number(h?.kwh || 0))
+        .filter(n => Number.isFinite(n) && n > 0);
+
     const promedioMensual = Number(q?.consumoMensual || 0);
     const promedioDiario = Number((promedioMensual * 1000) / 30 || 0);
-    const cfeMensual = Number(q?.reciboMensual || r?.totalAPagar || 0);
-    const promedioMensualDinero = cfeMensual;
-    const promedioAnualDinero = cfeMensual * 12;
+
+    const promedioCostoMensual = pagos.length
+        ? pagos.reduce((a, b) => a + b, 0) / pagos.length
+        : Number(q?.reciboMensual || r?.totalAPagar || 0);
+
+    const consumoMasAlto = consumos.length
+        ? Math.max(...consumos)
+        : Number(r?.consumoPeriodo || promedioMensual || 0);
+
+    const totalPagosRecibo = pagos.length
+        ? pagos.reduce((a, b) => a + b, 0)
+        : Number(r?.totalAPagar || promedioCostoMensual || 0);
+
     const nota = r?.ajusteConsumo?.nota || '';
 
     return `
@@ -5585,23 +5660,23 @@ secomV2RenderConsumptionLeft = function () {
 
       <div class="consumption-kpi-card consumption-kpi-green">
         <div class="consumption-kpi-icon"><i data-lucide="dollar-sign"></i></div>
-        <div class="consumption-kpi-label">CFE mensual</div>
-        <div class="consumption-kpi-value">${formatCurrencyMXN(cfeMensual)}</div>
+        <div class="consumption-kpi-label">Promedio costo mensual</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioCostoMensual)}</div>
         <div class="consumption-kpi-unit">MXN/mes</div>
       </div>
 
       <div class="consumption-kpi-card consumption-kpi-blue">
-        <div class="consumption-kpi-icon"><i data-lucide="receipt"></i></div>
-        <div class="consumption-kpi-label">Promedio $ consumo mensual</div>
-        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioMensualDinero)}</div>
-        <div class="consumption-kpi-unit">MXN/mes</div>
+        <div class="consumption-kpi-icon"><i data-lucide="bar-chart-3"></i></div>
+        <div class="consumption-kpi-label">Consumo más alto</div>
+        <div class="consumption-kpi-value">${formatNumber(consumoMasAlto)}</div>
+        <div class="consumption-kpi-unit">kWh</div>
       </div>
 
       <div class="consumption-kpi-card consumption-kpi-purple">
-        <div class="consumption-kpi-icon"><i data-lucide="trending-up"></i></div>
-        <div class="consumption-kpi-label">Promedio $ consumo anual</div>
-        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioAnualDinero)}</div>
-        <div class="consumption-kpi-unit">MXN/año</div>
+        <div class="consumption-kpi-icon"><i data-lucide="receipt"></i></div>
+        <div class="consumption-kpi-label">Total pagado histórico</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(totalPagosRecibo)}</div>
+        <div class="consumption-kpi-unit">MXN recibo CFE</div>
       </div>
 
       <div class="consumption-kpi-card consumption-kpi-green">
@@ -5623,7 +5698,6 @@ secomV2RenderConsumptionLeft = function () {
     </div>
   `;
 };
-
 secomV2RenderConsumptionRight = function () {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const hist = (r?.historial || []).slice(-12);

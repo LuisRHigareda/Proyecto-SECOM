@@ -2466,3 +2466,19 @@ button, input, select, textarea{
 .quote-flow-grid.quote-flow-grid--single #wizardRight{
     display:none !important;
 }
+/* Paso consumo: izquierda y derecha mismo espacio */
+.wizard-grid--consumption,
+.quote-flow-grid.wizard-grid--consumption{
+    grid-template-columns:1fr 1fr !important;
+}
+
+.consumption-chart-box{
+    margin-top:12px;
+    height:320px;
+    width:100%;
+}
+
+.consumption-history-table td:first-child,
+.consumption-history-table th:first-child{
+    min-width:90px;
+}
