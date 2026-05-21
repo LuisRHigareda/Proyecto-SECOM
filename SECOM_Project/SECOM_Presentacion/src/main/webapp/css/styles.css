@@ -2482,3 +2482,77 @@ button, input, select, textarea{
 .consumption-history-table th:first-child{
     min-width:90px;
 }
+/* Ajustes finales de cotización */
+.quote-stepper-card{
+    display:none !important;
+}
+
+.secom-package-product-card{
+    border-color: rgba(34,197,94,0.30) !important;
+    background:
+        radial-gradient(circle at top left, rgba(34,197,94,0.12), transparent 42%),
+        rgba(15,23,42,0.82) !important;
+}
+
+.secom-package-product-card.is-selected{
+    border-color: rgba(34,197,94,0.65) !important;
+    box-shadow: 0 0 0 1px rgba(34,197,94,0.32), 0 18px 42px rgba(0,0,0,0.22) !important;
+}
+
+.export-doc,
+.export-doc--formal{
+    width: 794px;
+    max-width: 794px;
+    box-sizing: border-box;
+    border-radius: 0;
+    overflow: visible;
+}
+
+.export-doc *{
+    box-sizing: border-box;
+}
+
+.export-doc__value2,
+.export-doc__meta2,
+.export-doc__row2 b,
+.export-doc__kpiValue,
+.export-doc__assumpGrid b{
+    overflow-wrap: anywhere;
+    word-break: normal;
+    white-space: normal;
+    text-align: right;
+}
+
+.export-doc__value2,
+.export-doc__meta2{
+    text-align: left;
+}
+
+.export-doc__row2{
+    align-items: flex-start;
+}
+
+.export-doc table td,
+.export-doc table th{
+    overflow-wrap: anywhere;
+    word-break: normal;
+    vertical-align: top;
+}
+
+select,
+select option,
+input,
+textarea{
+    color: var(--text);
+}
+
+select option{
+    background: #111827;
+    color: #f8fafc;
+}
+
+:root[data-theme="light"] select option,
+body.theme-light select option{
+    background: #ffffff;
+    color: #111827;
+}

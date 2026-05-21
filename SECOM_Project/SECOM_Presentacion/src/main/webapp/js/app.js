@@ -665,6 +665,7 @@ function renderCashvoltTable() {
 
 function buildStepper() {
     const el = $('#stepper');
+    if (!el) return;
 
     const steps = [
         {n: 1, label: 'Recibo'},
@@ -834,7 +835,7 @@ function renderStep1Left() {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="file-text"></i>
-                    Numero de Servicio
+                    Número de servicio
                 </div>
 
                 <input
@@ -847,7 +848,7 @@ function renderStep1Left() {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="user-circle"></i>
-                    Nombre del Cliente
+                    Nombre del cliente
                 </div>
 
                 <input
@@ -860,7 +861,7 @@ function renderStep1Left() {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="zap"></i>
-                    Tariffa
+                    Tarifa
                 </div>
 
                 <input
@@ -1309,7 +1310,7 @@ function refreshStep2Summary() {
     const q = syncStep2State();
     const alerts = getStep2Alerts();
     $('#step2Holder') && ($('#step2Holder').textContent = state.receipt?.nombre || '—');
-    $('#step2Address') && ($('#step2Address').textContent = state.receipt?.direccion || '—');
+    $('#step2Dirección') && ($('#step2Dirección').textContent = state.receipt?.direccion || '—');
     $('#step2Servicio') && ($('#step2Servicio').textContent = state.receipt?.servicio || '—');
     $('#step2Periodo') && ($('#step2Periodo').textContent = state.receipt?.periodo?.raw || '—');
     $('#step2Total') && ($('#step2Total').textContent = state.receipt?.totalAPagar ? formatCurrencyMXN(state.receipt.totalAPagar) : '—');
@@ -1846,6 +1847,41 @@ function persistQuote(status) {
     return q;
 }
 
+
+function addCanvasToPdfByPages(pdf, canvas, options = {}) {
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = Number(options.margin ?? 24);
+    const imgW = pageW - margin * 2;
+    const usableH = pageH - margin * 2;
+    const sliceHeightPx = Math.floor((usableH / imgW) * canvas.width);
+
+    let y = 0;
+    let pageIndex = 0;
+
+    while (y < canvas.height) {
+        const h = Math.min(sliceHeightPx, canvas.height - y);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = h;
+        const ctx = pageCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+
+        if (pageIndex > 0) {
+            pdf.addPage();
+        }
+
+        const imgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+        const imgH = h * (imgW / canvas.width);
+        pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH);
+
+        y += h;
+        pageIndex += 1;
+    }
+}
+
 async function exportPdf() {
     if (!window.html2canvas || !window.jspdf) {
         toast({title: 'Exportación no disponible', message: 'Faltan librerías de exportación en el navegador.', icon: 'alert-triangle'});
@@ -1871,31 +1907,11 @@ async function exportPdf() {
         // Pequeña espera para asegurar que el canvas tenga contenido
         await new Promise(r => setTimeout(r, 60));
 
-        const canvas = await window.html2canvas(area, {scale: 2, useCORS: true, backgroundColor: '#ffffff'});
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const canvas = await window.html2canvas(area, {scale: 3, useCORS: true, backgroundColor: '#ffffff', windowWidth: area.scrollWidth});
 
         const {jsPDF} = window.jspdf;
         const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'a4'});
-
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        const margin = 28;
-
-        const imgW = pageW - margin * 2;
-        const imgH = canvas.height * (imgW / canvas.width);
-
-        let heightLeft = imgH;
-        let position = margin;
-
-        pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-        heightLeft -= (pageH - margin * 2);
-
-        while (heightLeft > 0) {
-            pdf.addPage();
-            position = margin - (imgH - heightLeft);
-            pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-            heightLeft -= (pageH - margin * 2);
-        }
+        addCanvasToPdfByPages(pdf, canvas, {margin: 24});
 
         const name = (state.client.nombre || 'Cliente').trim().replace(/\s+/g, '_').slice(0, 36);
         const filename = `Cotizacion_SECOM_${name}_${state.savedQuote.id}.pdf`;
@@ -2325,30 +2341,11 @@ async function exportPdfFromStoredQuote(q) {
 
         await new Promise(r => setTimeout(r, 60));
 
-        const canvas = await window.html2canvas(area, {scale: 2, useCORS: true, backgroundColor: '#ffffff'});
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const canvas = await window.html2canvas(area, {scale: 3, useCORS: true, backgroundColor: '#ffffff', windowWidth: area.scrollWidth});
 
         const {jsPDF} = window.jspdf;
         const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'a4'});
-
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        const margin = 28;
-
-        const imgW = pageW - margin * 2;
-        const imgH = canvas.height * (imgW / canvas.width);
-
-        let heightLeft = imgH;
-        let position = margin;
-
-        pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-        heightLeft -= (pageH - margin * 2);
-        while (heightLeft > 0) {
-            pdf.addPage();
-            position = margin - (imgH - heightLeft);
-            pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
-            heightLeft -= (pageH - margin * 2);
-        }
+        addCanvasToPdfByPages(pdf, canvas, {margin: 24});
         const name = (q.client?.nombre || 'Cliente').trim().replace(/\s+/g, '_').slice(0, 36);
         pdf.save(`Cotizacion_SECOM_${name}_${q.id}.pdf`);
 
@@ -4200,7 +4197,7 @@ function secomV2Number(v, fallback = 0) {
     return Number.isFinite(n) ? n : fallback;
 }
 
-function secomV2GetCoveragePct(q) {
+function secomV2GetCoberturaPct(q) {
     const consumo = Number(q?.consumoMensual || 0);
     const produccion = Number(q?.produccionMensual || 0);
 
@@ -4251,8 +4248,10 @@ function secomV2SyncReceiptBasics() {
         state.receipt.estado = ($('#rEstado')?.value || '').trim().toUpperCase();
     }
 
-    state.client.nombre = state.client.nombre || state.receipt.nombre || '';
-    state.client.direccion = state.client.direccion || state.receipt.direccion || '';
+    // En esta versión visual, el nombre y la dirección del cliente se capturan en el recibo.
+    // Se sincronizan siempre para que el formato final muestre el nombre completo y la dirección completa.
+    state.client.nombre = state.receipt.nombre || state.client.nombre || '';
+    state.client.direccion = state.receipt.direccion || state.client.direccion || '';
 
     applyTariffCalculationAssumptions(state.receipt, state.selectedTariff);
     state.quote = currentStep2Quote();
@@ -4358,6 +4357,7 @@ function secomV2SyncPackage() {
 
 buildStepper = function () {
     const el = $('#stepper');
+    if (!el) return;
     const steps = [
         {n: 1, label: 'Recibo'},
         {n: 2, label: 'Consumo'},
@@ -4482,7 +4482,7 @@ renderStep1Left = function () {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="file-text"></i>
-                    Numero de Servicio
+                    Número de servicio
                 </div>
                 <input id="rServicio" placeholder="###########" value="${escapeAttr(r?.servicio || '')}" />
             </div>
@@ -4490,7 +4490,7 @@ renderStep1Left = function () {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="user-circle"></i>
-                    Nombre del Cliente
+                    Nombre del cliente
                 </div>
                 <input id="rNombre" placeholder="Titular del recibo" value="${escapeAttr(r?.nombre || '')}" />
             </div>
@@ -4498,7 +4498,7 @@ renderStep1Left = function () {
             <div class="receipt-info-card">
                 <div class="receipt-info-label">
                     <i data-lucide="zap"></i>
-                    Tariffa
+                    Tarifa
                 </div>
                 <input id="rTarifa" placeholder="1B / DAC / PDBT / ..." value="${escapeAttr(r?.tarifa || state.selectedTariff?.label || '')}" />
             </div>
@@ -4514,7 +4514,7 @@ renderStep1Left = function () {
             <div class="receipt-info-card receipt-info-card--wide">
                 <div class="receipt-info-label">
                     <i data-lucide="map-pin"></i>
-                    Address
+                    Dirección
                 </div>
                 <textarea id="rDireccion" rows="2" placeholder="Dirección del suministro">${escapeHtml(r?.direccion || '')}</textarea>
             </div>
@@ -4720,14 +4720,23 @@ wireStep1 = function () {
 
     ['#rServicio', '#rTarifa', '#rNombre', '#rDireccion', '#rPeriodo', '#rTipoPeriodo', '#rEstado'].forEach(id => {
         $(id)?.addEventListener('input', () => {
+            // No se reescribe el valor del input mientras el usuario escribe; esto permite capturar espacios
+            // en nombre completo y dirección sin que el campo se recorte en cada pulsación.
             secomV2SyncReceiptBasics();
-            updateStep1FromReceipt();
-            $('#btnStep1Next').disabled = false;
+            if ($('#btnStep1Next')) $('#btnStep1Next').disabled = false;
+            const r = state.receipt || {};
+            $('#kpiTarifa') && ($('#kpiTarifa').textContent = r.tarifa || state.selectedTariff?.label || '—');
+            $('#kpiServicio') && ($('#kpiServicio').textContent = r.servicio || '—');
+            $('#kpiPeriodo') && ($('#kpiPeriodo').textContent = r.periodo?.raw || '—');
+            $('#kpiTipoPeriodo') && ($('#kpiTipoPeriodo').textContent = r.tipoPeriodo || state.selectedTariff?.periodo || '—');
+            $('#kpiCliente') && ($('#kpiCliente').textContent = r.nombre || '—');
+            $('#kpiDireccion') && ($('#kpiDireccion').textContent = r.direccion || '—');
+            $('#kpiEstado') && ($('#kpiEstado').textContent = r.estado || '—');
         });
         $(id)?.addEventListener('change', () => {
             secomV2SyncReceiptBasics();
             updateStep1FromReceipt();
-            $('#btnStep1Next').disabled = false;
+            if ($('#btnStep1Next')) $('#btnStep1Next').disabled = false;
         });
     });
 
@@ -5225,7 +5234,7 @@ function secomV2WirePrecalc() {
 //}
 //
 //    const q = currentStep2Quote();
-//    const coverage = secomV2GetCoveragePct(q);
+//    const coverage = secomV2GetCoberturaPct(q);
 //
 //    return `
 //    <div class="card__title">Resumen de cotización</div>
@@ -5234,7 +5243,7 @@ function secomV2WirePrecalc() {
 //      <div class="quote-summary-panel__title">${state.selectedPackage ? 'Paquete seleccionado' : 'Selecciona productos'}</div>
 //      <div class="review-row"><span>Instalado</span><b id="step2Kwp">${Number(q.kwp || 0).toFixed(2)} kWp</b></div>
 //      <div class="review-row"><span>Producción estimada</span><b>${formatNumber(q.produccionMensual || 0)} kWh/mes</b></div>
-//      <div class="review-row"><span>Cobertura</span><b id="summaryCoverage">${coverage == null ? 'Pendiente' : `${coverage}%`}</b></div>
+//      <div class="review-row"><span>Cobertura</span><b id="summaryCobertura">${coverage == null ? 'Pendiente' : `${coverage}%`}</b></div>
 //      <div class="review-row"><span>Ahorro estimado</span><b id="step2Saving">${formatCurrencyMXN(q.ahorroMensual || 0)}</b></div>
 //      <div class="review-row"><span>Total cotización</span><b id="kpiQuoteTotal">${formatCurrencyMXN(q.inversion || 0)}</b></div>
 //    </div>
@@ -5260,7 +5269,7 @@ function secomV2WirePrecalc() {
 
 function secomV2RefreshPackageSummary() {
     const q = secomV2SyncPackage();
-    const coverage = secomV2GetCoveragePct(q);
+    const coverage = secomV2GetCoberturaPct(q);
 
     if ($('#step2Kwp')) {
         $('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`;
@@ -5270,8 +5279,8 @@ function secomV2RefreshPackageSummary() {
         $('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0);
     }
 
-    if ($('#summaryCoverage')) {
-        $('#summaryCoverage').textContent = coverage == null ? 'Pendiente' : `${coverage}%`;
+    if ($('#summaryCobertura')) {
+        $('#summaryCobertura').textContent = coverage == null ? 'Pendiente' : `${coverage}%`;
     }
 
     if ($('#kpiQuoteTotal')) {
@@ -5289,26 +5298,33 @@ applyPackagePreset = function (packageKey) {
     secomV2SyncPackage();
     state.selectedPackage = packageKey;
 
-    const q = state.quote || currentStep2Quote();
+    const baseQuote = state.quote || currentStep2Quote();
+    const pkg = (PACKAGE_PRESETS || []).find(p => String(p.key) === String(packageKey));
 
     state.receipt.insumos = buildPackageItems(packageKey, {
-        quote: q,
+        quote: baseQuote,
         receipt: state.receipt,
-        paneles: q.paneles,
-        consumoMensual: q.consumoMensual
+        paneles: baseQuote.paneles,
+        consumoMensual: baseQuote.consumoMensual
     });
 
     state.receipt.impuestosPct = Number.isFinite(Number(state.receipt.impuestosPct))
             ? Number(state.receipt.impuestosPct)
             : (state.preferences?.quoteDefaults?.taxPct || 0.16);
 
-    state.quote = currentStep2Quote();
+    state.receipt.instalacion = {
+        ...(state.receipt.instalacion || {}),
+        paqueteSeleccionado: packageKey,
+        paqueteLabel: pkg?.label || pkg?.nombre || 'Paquete completo'
+    };
+
+    state.quote = secomV3CurrentQuote();
 
     renderWizard();
 
     toast({
         title: 'Paquete aplicado',
-        message: `${PACKAGE_PRESETS.find(p => p.key === packageKey)?.label || 'Paquete'} cargado con precios por defecto.`,
+        message: `${pkg?.label || 'Paquete'} cargado con insumos y precios vigentes.`,
         icon: 'package'
     });
 };
@@ -5477,10 +5493,6 @@ renderCotizadorRoute = function () {
       </div>
 
       
-      <div class="quote-stepper-card">
-        <div class="stepper" id="stepper"></div>
-      </div>
-
       <div class="quote-flow-grid">
         <div class="card quote-main-card" id="wizardLeft"></div>
         <div class="card quote-side-card" id="wizardRight"></div>
@@ -5503,6 +5515,7 @@ renderCotizadorRoute = function () {
 
 buildStepper = function () {
     const el = $('#stepper');
+    if (!el) return;
     const steps = [
         {n: 1, label: 'Recibo'},
         {n: 2, label: 'Consumo'},
@@ -5679,6 +5692,7 @@ function secomV3GetProductIcon(category) {
         inversores: 'cpu',
         montaje: 'wrench',
         proteccion: 'shield-check',
+        paquetes: 'boxes',
         otros: 'package'
     };
 
@@ -5691,6 +5705,7 @@ function secomV3GetCategoryLabel(category) {
         inversores: 'Inversores',
         montaje: 'Montaje',
         proteccion: 'Protección',
+        paquetes: 'Paquetes completos',
         otros: 'Otros'
     };
 
@@ -5787,11 +5802,14 @@ function secomV3CurrentQuote() {
     const base = currentStep2Quote();
 
     const installedWatts = secomV3InstalledWatts();
-    const installedKwp = installedWatts / 1000;
     const selectedPanelCount = secomV3SelectedPanelCount();
+    const selectedKwp = installedWatts > 0 ? installedWatts / 1000 : 0;
 
-    const yieldMonth = Number(state.params?.yieldKwhPerKwpMonth || 135);
-    const produccionMensual = installedKwp > 0 ? installedKwp * yieldMonth : Number(base.produccionMensual || 0);
+    const effectiveKwp = selectedKwp > 0 ? selectedKwp : Number(base.kwp || 0);
+    const effectivePanels = selectedPanelCount > 0 ? selectedPanelCount : Number(base.paneles || 0);
+
+    const yieldMonth = Number(base.yieldEfectivo || state.params?.yieldKwhPerKwpMonth || 135);
+    const produccionMensual = effectiveKwp > 0 ? effectiveKwp * yieldMonth : 0;
     const produccionAnual = produccionMensual * 12;
 
     const consumoMensual = Number(base.consumoMensual || 0);
@@ -5800,26 +5818,28 @@ function secomV3CurrentQuote() {
         : null;
 
     const totals = secomV3ComputeTotals();
+    const hasSelectedInsumos = totals.total > 0;
 
-    const ahorroMensualBase = Number(base.ahorroMensual || 0);
-    const ahorroMensual = coverage == null
-        ? ahorroMensualBase
-        : Math.min(ahorroMensualBase, ahorroMensualBase * (coverage / 100));
+    const pagoMensual = Number(base.pagoProm || 0);
+    const coberturaFinanciera = coverage == null ? 1 : Math.max(0, Math.min(1, coverage / 100));
+    const ahorroCalculado = pagoMensual > 0 ? pagoMensual * coberturaFinanciera : Number(base.ahorroMensual || 0);
+    const ahorroMensual = Math.round(Math.max(0, Math.min(pagoMensual || ahorroCalculado, ahorroCalculado)));
 
-    const retornoAnios = ahorroMensual > 0 && totals.total > 0
-        ? Math.round((totals.total / (ahorroMensual * 12)) * 10) / 10
+    const inversion = hasSelectedInsumos ? totals.total : Number(base.inversion || 0);
+    const retornoAnios = ahorroMensual > 0 && inversion > 0
+        ? Math.round((inversion / (ahorroMensual * 12)) * 10) / 10
         : 0;
 
     return {
         ...base,
-        kwp: installedKwp > 0 ? installedKwp : Number(base.kwp || 0),
-        paneles: selectedPanelCount > 0 ? selectedPanelCount : Number(base.paneles || 0),
+        kwp: effectiveKwp,
+        paneles: effectivePanels,
         wattsInstalados: installedWatts,
-        produccionMensual,
-        produccionAnual,
+        produccionMensual: Math.round(produccionMensual),
+        produccionAnual: Math.round(produccionAnual),
         porcentajeCobertura: coverage,
         ahorroMensual,
-        inversion: totals.total,
+        inversion,
         subtotalInsumos: totals.subtotal,
         impuestosInsumos: totals.iva,
         totalInsumos: totals.total,
@@ -5872,6 +5892,45 @@ function secomV3RenderProductCard(product) {
             </button>
         </div>
     `;
+}
+
+
+function secomV3GetPackageCards() {
+    loadInsumoCatalogSafe(true);
+    loadPackageCatalogSafe(true);
+    const q = state.quote || currentStep2Quote();
+    return (PACKAGE_PRESETS || [])
+        .filter(pkg => pkg && pkg.activo !== false)
+        .map(pkg => {
+            const items = buildPackageItems(pkg.key, {
+                quote: q,
+                receipt: state.receipt,
+                paneles: q.paneles,
+                consumoMensual: q.consumoMensual
+            });
+            const subtotal = items.reduce((acc, it) => acc + (Number(it.cantidad || 0) * Number(it.precio || 0)), 0);
+            const ivaPct = Number(state.receipt?.impuestosPct ?? 0.16);
+            const total = subtotal * (1 + ivaPct);
+            const selected = String(state.selectedPackage || '') === String(pkg.key);
+            return `
+                <div class="secom-product-card secom-package-product-card ${selected ? 'is-selected' : ''}">
+                    <div class="secom-product-card__top">
+                        <div class="secom-product-card__icon"><i data-lucide="boxes"></i></div>
+                        <span class="badge">${escapeHtml(pkg.badge || 'Paquete')}</span>
+                    </div>
+                    <div class="secom-product-card__name">${escapeHtml(pkg.label || pkg.nombre || 'Paquete')}</div>
+                    <div class="secom-product-card__meta">${escapeHtml(pkg.description || pkg.descripcion || '')}</div>
+                    <div class="secom-product-card__specs">
+                        <span>${items.length} insumos</span>
+                        <span>${formatCurrencyMXN(total)}</span>
+                    </div>
+                    <button class="btn btn--primary secom-product-card__btn" data-add-package="${escapeAttr(pkg.key)}">
+                        <i data-lucide="package-plus"></i>
+                        Aplicar paquete
+                    </button>
+                </div>
+            `;
+        });
 }
 
 function secomV3RenderSelectedProduct(item, index) {
@@ -5928,9 +5987,10 @@ function secomV3RenderSelectedProduct(item, index) {
 function secomV2RenderPackageLeft() {
     secomV3EnsureProductState();
 
-    const categories = ['paneles', 'inversores', 'montaje', 'proteccion', 'otros'];
+    const categories = ['paneles', 'inversores', 'montaje', 'proteccion', 'paquetes', 'otros'];
     const activeCategory = state.productCatalog?.activeCategory || 'paneles';
-    const products = secomV3GetProductsByCategory(activeCategory);
+    const products = activeCategory === 'paquetes' ? [] : secomV3GetProductsByCategory(activeCategory);
+    const packageCards = activeCategory === 'paquetes' ? secomV3GetPackageCards() : [];
     const selected = state.receipt.insumos || [];
     const totals = secomV3ComputeTotals();
     const q = secomV3CurrentQuote();
@@ -5944,7 +6004,7 @@ function secomV2RenderPackageLeft() {
 
             <div class="secom-products-head">
                 <div>
-                    <div class="card__title">Product Catalog</div>
+                    <div class="card__title">Catálogo de productos</div>
                     <div class="help">
                         Selecciona productos para construir el sistema solar personalizado.
                     </div>
@@ -5965,13 +6025,11 @@ function secomV2RenderPackageLeft() {
             </div>
 
             <div class="secom-product-catalog secom-product-catalog--wide">
-                ${products.length
-                    ? products.map(secomV3RenderProductCard).join('')
-                    : `
-                        <div class="review-alert" style="width:100%">
-                            No hay productos registrados en esta categoría.
-                        </div>
-                    `
+                ${activeCategory === 'paquetes'
+                    ? (packageCards.length ? packageCards.join('') : `<div class="review-alert" style="width:100%">No hay paquetes activos registrados.</div>`)
+                    : (products.length
+                        ? products.map(secomV3RenderProductCard).join('')
+                        : `<div class="review-alert" style="width:100%">No hay productos registrados en esta categoría.</div>`)
                 }
             </div>
 
@@ -6005,8 +6063,8 @@ function secomV2RenderPackageLeft() {
             <div class="secom-cart-panel">
                 <div class="secom-cart-panel__head">
                     <div>
-                        <div class="card__title">Selected Products</div>
-                        <div class="help">Productos seleccionados para la cotización actual.</div>
+                        <div class="card__title">Productos seleccionados</div>
+                        <div class="help">Productos e insumos seleccionados para la cotización actual.</div>
                     </div>
 
                     <button class="btn" id="btnAddManualProduct" type="button">
@@ -6022,7 +6080,7 @@ function secomV2RenderPackageLeft() {
                             <div class="empty" style="min-height:150px">
                                 <div class="empty__icon"><i data-lucide="shopping-cart"></i></div>
                                 <div class="card__title">No hay productos seleccionados</div>
-                                <div class="help">Agrega productos desde el catálogo superior.</div>
+                                <div class="help">Agrega productos o aplica un paquete completo desde el catálogo superior.</div>
                             </div>
                         `
                     }
@@ -6030,14 +6088,14 @@ function secomV2RenderPackageLeft() {
             </div>
 
             <div class="secom-summary-bottom">
-                <div class="card__title">Quotation Summary</div>
+                <div class="card__title">Resumen de cotización</div>
 
                 <div class="secom-summary-bottom-grid">
 
                     <div class="secom-summary-figma secom-summary-figma--blue">
                         <div class="secom-summary-figma__label">
                             <i data-lucide="zap"></i>
-                            Installed Capacity
+                            Capacidad instalada
                         </div>
                         <div class="secom-summary-figma__value">
                             ${Number(q.kwp || 0).toFixed(2)}
@@ -6048,18 +6106,18 @@ function secomV2RenderPackageLeft() {
                     <div class="secom-summary-figma secom-summary-figma--green">
                         <div class="secom-summary-figma__label">
                             <i data-lucide="trending-up"></i>
-                            Annual Production
+                            Producción anual
                         </div>
                         <div class="secom-summary-figma__value">
                             ${formatNumber(q.produccionAnual || 0)}
                         </div>
-                        <div class="secom-summary-figma__unit">kWh/year</div>
+                        <div class="secom-summary-figma__unit">kWh/año</div>
                     </div>
 
                     <div class="secom-summary-figma secom-summary-figma--purple">
                         <div class="secom-summary-figma__label">
                             <i data-lucide="battery"></i>
-                            Coverage
+                            Cobertura
                         </div>
                         <div class="secom-summary-figma__value">
                             ${coverageText}
@@ -6072,33 +6130,33 @@ function secomV2RenderPackageLeft() {
                     <div class="secom-summary-figma secom-summary-figma--yellow">
                         <div class="secom-summary-figma__label">
                             <i data-lucide="dollar-sign"></i>
-                            Monthly Savings
+                            Ahorro mensual
                         </div>
                         <div class="secom-summary-figma__value">
                             ${formatCurrencyMXN(q.ahorroMensual || 0)}
                         </div>
-                        <div class="secom-summary-figma__unit">MXN/month</div>
+                        <div class="secom-summary-figma__unit">MXN/mes</div>
                     </div>
 
                     <div class="secom-summary-figma">
                         <div class="secom-summary-figma__label">
                             <i data-lucide="chart-no-axes-combined"></i>
-                            Estimated ROI
+                            Retorno estimado
                         </div>
                         <div class="secom-summary-figma__value">
                             ${q.retornoAnios || 0}
                         </div>
-                        <div class="secom-summary-figma__unit">years</div>
+                        <div class="secom-summary-figma__unit">años</div>
                     </div>
 
                     <div class="secom-summary-figma secom-summary-figma--total">
                         <div class="secom-summary-figma__label">
-                            Total Investment
+                            Inversión total
                         </div>
                         <div class="secom-summary-figma__value">
                             ${formatCurrencyMXN(q.inversion || 0)}
                         </div>
-                        <div class="secom-summary-figma__unit">MXN taxes included</div>
+                        <div class="secom-summary-figma__unit">MXN con IVA</div>
                     </div>
 
                 </div>
@@ -6166,7 +6224,7 @@ function secomV3RefreshPackageUI() {
     $('#kpiQuoteTotal') && ($('#kpiQuoteTotal').textContent = formatCurrencyMXN(q.inversion || 0));
     $('#step2Kwp') && ($('#step2Kwp').textContent = `${Number(q.kwp || 0).toFixed(2)} kWp`);
     $('#step2Saving') && ($('#step2Saving').textContent = formatCurrencyMXN(q.ahorroMensual || 0));
-    $('#summaryCoverage') && ($('#summaryCoverage').textContent = q.porcentajeCobertura == null ? 'Pendiente' : `${q.porcentajeCobertura}%`);
+    $('#summaryCobertura') && ($('#summaryCobertura').textContent = q.porcentajeCobertura == null ? 'Pendiente' : `${q.porcentajeCobertura}%`);
 }
 
 function secomV2WirePackage() {
@@ -6235,6 +6293,18 @@ function secomV2WirePackage() {
         renderWizard();
     }, 180));
 
+    $$('#route-cotizador [data-add-package]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = String(btn.dataset.addPackage || '');
+            const pkg = (PACKAGE_PRESETS || []).find(p => String(p.key) === key);
+            if (!pkg) {
+                toast({title: 'Paquete no disponible', message: 'No se encontró el paquete seleccionado.', icon: 'alert-triangle'});
+                return;
+            }
+            applyPackagePreset(key);
+        });
+    });
+
     $$('#route-cotizador [data-add-product]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = String(btn.dataset.addProduct || '');
@@ -6272,6 +6342,10 @@ function secomV2WirePackage() {
             }
 
             state.selectedPackage = '';
+            if (state.receipt?.instalacion) {
+                state.receipt.instalacion.paqueteSeleccionado = '';
+                state.receipt.instalacion.paqueteLabel = '';
+            }
             state.quote = secomV3CurrentQuote();
 
             renderWizard();
@@ -6285,6 +6359,11 @@ function secomV2WirePackage() {
     });
 
     $('#btnAddManualProduct')?.addEventListener('click', () => {
+        state.selectedPackage = '';
+        if (state.receipt?.instalacion) {
+            state.receipt.instalacion.paqueteSeleccionado = '';
+            state.receipt.instalacion.paqueteLabel = '';
+        }
         state.receipt.insumos.push({
             codigo: '',
             descripcion: 'Producto manual',

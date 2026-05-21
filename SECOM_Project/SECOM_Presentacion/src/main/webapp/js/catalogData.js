@@ -28,6 +28,7 @@ export function normalizeCatalogItem(item = {}) {
     categoria: String(item.categoria ?? 'General').trim() || 'General',
     unidad: String(item.unidad ?? 'UD').trim().toUpperCase() || 'UD',
     precio: Number(item.precio ?? item.precioUnitario ?? item.precio_unitario ?? 0) || 0,
+    watts: extractWattsFromText(item),
     impuestoPct: normalizePct(item.impuestoPct ?? item.impuesto_pct ?? 0.16),
     activo: item.activo !== false,
     observaciones: String(item.observaciones ?? '').trim(),
@@ -39,6 +40,14 @@ function normalizePct(value, fallback = 0.16) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return fallback;
   return n > 1 ? n / 100 : n;
+}
+
+function extractWattsFromText(item = {}) {
+  const direct = Number(item.watts ?? item.capacidad ?? item.potencia ?? 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const txt = `${item.codigo || ''} ${item.descripcion || item.nombre || ''}`;
+  const match = txt.match(/(\d{3,4})\s*w/i);
+  return match ? Number(match[1]) : 0;
 }
 
 export function setInsumoCatalog(items = []) {
@@ -209,6 +218,8 @@ function createItemFromCatalog(ref = {}, cantidad = 1, context = {}) {
       cantidad: qty > 0 ? qty : 1,
       unidad: ref.unidad || 'SERV',
       precio: Number(override ?? ref.precio ?? 0) || 0,
+      categoria: ref.categoria || 'General',
+      watts: extractWattsFromText(ref),
       impuestoPct: normalizePct(ref.impuestoPct ?? 0.16),
     };
   }
@@ -221,6 +232,8 @@ function createItemFromCatalog(ref = {}, cantidad = 1, context = {}) {
     cantidad: qty > 0 ? qty : 1,
     unidad: ref.unidad || base.unidad,
     precio: Number(override ?? base.precio ?? ref.precio ?? 0) || 0,
+    categoria: base.categoria || ref.categoria || 'General',
+    watts: Number(base.watts || extractWattsFromText(base) || extractWattsFromText(ref) || 0),
     impuestoPct: normalizePct(base.impuestoPct ?? ref.impuestoPct ?? 0.16),
   };
 }

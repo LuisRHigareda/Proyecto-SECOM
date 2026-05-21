@@ -79,15 +79,22 @@ export function computeQuote(receipt, client, params, overrides) {
     const inversionBase = kwpFinal * costPerKwpEff;
     let inversion = Math.round(inversionBase * (1 + p.contingencyPct));
 
-    // Ahorro estimado: usando pago promedio y costo base del recibo cuando existe
-    const pagoActual = Number(receipt?.totalAPagar || 0);
+    // Ahorro estimado mensual. Para recibos bimestrales se normaliza el pago a mes.
+    // Si el recibo incluye ahorro estimado extraído de la plantilla original, se respeta;
+    // de lo contrario, se estima con la cobertura energética del sistema, sin exceder el pago mensual actual.
+    const pagoActualPeriodo = Number(receipt?.totalAPagar || 0);
+    const normalizaPagoMensual = (value) => isBimestral ? (Number(value || 0) / 2) : Number(value || 0);
     const pagoProm = (() => {
         const pagos = (receipt?.historial || []).map(x => Number(x.pago || 0)).filter(n => n > 0);
-        return pagos.length ? (pagos.reduce((a, b) => a + b, 0) / pagos.length) : pagoActual;
+        const promedioPeriodo = pagos.length ? (pagos.reduce((a, b) => a + b, 0) / pagos.length) : pagoActualPeriodo;
+        return Math.max(0, normalizaPagoMensual(promedioPeriodo));
     })();
 
-    const ahorroMensual = Math.max(0, Number(receipt?.ahorroEstimado || 0));
-    const ahorroMensualEstimado = ahorroMensual > 0 ? ahorroMensual : Math.max(0, pagoProm * 0.65);
+    const coberturaDisenio = consumoMensual > 0 ? clamp((kwpFinal * yieldEfectivo) / consumoMensual, 0, 1) : 0;
+    const ahorroRecibo = Math.max(0, Number(receipt?.ahorroEstimado || 0));
+    const ahorroMensualEstimado = ahorroRecibo > 0
+        ? Math.min(pagoProm || ahorroRecibo, isBimestral ? ahorroRecibo : ahorroRecibo)
+        : Math.max(0, pagoProm * coberturaDisenio);
 
     // Si existe un desglose de insumos con precios, se usa como total de inversión
     const insumos = Array.isArray(receipt?.insumos) ? receipt.insumos : [];
@@ -168,9 +175,9 @@ export function buildExportHtml(quote) {
     const totalIns = Number(quote.totalInsumos || 0);
     const ivaPct = Math.round((Number(quote.impuestosPct || r?.impuestosPct || 0.16) * 100) * 10) / 10;
     const prefs = loadUserPreferences();
-    const packageLabel = instal?.paqueteSeleccionado
+    const packageLabel = instal?.paqueteLabel || (instal?.paqueteSeleccionado
             ? `Paquete ${String(instal.paqueteSeleccionado).charAt(0).toUpperCase()}${String(instal.paqueteSeleccionado).slice(1)}`
-            : 'Configuración personalizada';
+            : 'Configuración personalizada');
     const advisor = prefs?.company?.advisorName || 'Asesor SECOM';
     const companyName = prefs?.company?.companyName || 'SECOM Energía Solar';
     const companyEmail = prefs?.company?.companyEmail || c.email || '—';
@@ -200,16 +207,16 @@ export function buildExportHtml(quote) {
         <div class="export-doc__grid2">
           <div class="export-doc__box2">
             <div class="export-doc__label2">Cliente</div>
-            <div class="export-doc__value2">${(c.nombre || r.nombre || '-')}</div>
-            <div class="export-doc__meta2">${(c.telefono || '-')} · ${(c.email || '-')}</div>
-            <div class="export-doc__meta2">${(c.direccion || r.direccion || '-')}</div>
+            <div class="export-doc__value2">${esc(c.nombre || r.nombre || '-')}</div>
+            <div class="export-doc__meta2">${esc(c.telefono || '-')} · ${esc(c.email || '-')}</div>
+            <div class="export-doc__meta2">${esc(c.direccion || r.direccion || '-')}</div>
           </div>
           <div class="export-doc__box2">
             <div class="export-doc__label2">Suministro</div>
-            <div class="export-doc__row2"><span>No. de servicio</span><b>${r.servicio || '-'}</b></div>
-            <div class="export-doc__row2"><span>Tarifa</span><b>${tarifa}</b></div>
-            <div class="export-doc__row2"><span>Periodo</span><b>${periodoRaw || '-'}</b></div>
-            <div class="export-doc__row2"><span>Titular del recibo</span><b>${(r.nombre || '-')}</b></div>
+            <div class="export-doc__row2"><span>No. de servicio</span><b>${esc(r.servicio || '-')}</b></div>
+            <div class="export-doc__row2"><span>Tarifa</span><b>${esc(tarifa)}</b></div>
+            <div class="export-doc__row2"><span>Periodo</span><b>${esc(periodoRaw || '-')}</b></div>
+            <div class="export-doc__row2"><span>Titular del recibo</span><b>${esc(r.nombre || '-')}</b></div>
           </div>
         </div>
       </div>
@@ -276,16 +283,16 @@ export function buildExportHtml(quote) {
         <div class="export-doc__grid2">
           <div class="export-doc__box2">
             <div class="export-doc__label2">Componentes</div>
-            <div class="export-doc__row2"><span>Modelo de panel</span><b>${(instal.panelModelo || '—')}</b></div>
-            <div class="export-doc__row2"><span>Dimensiones del panel</span><b>${(instal.panelDimensiones || '—')}</b></div>
-            <div class="export-doc__row2"><span>Modelo de inversor</span><b>${(instal.inversorModelo || '—')}</b></div>
-            <div class="export-doc__row2"><span>Alcance comercial</span><b>${packageLabel}</b></div>
+            <div class="export-doc__row2"><span>Modelo de panel</span><b>${esc(instal.panelModelo || '—')}</b></div>
+            <div class="export-doc__row2"><span>Dimensiones del panel</span><b>${esc(instal.panelDimensiones || '—')}</b></div>
+            <div class="export-doc__row2"><span>Modelo de inversor</span><b>${esc(instal.inversorModelo || '—')}</b></div>
+            <div class="export-doc__row2"><span>Alcance comercial</span><b>${esc(packageLabel)}</b></div>
           </div>
           <div class="export-doc__box2">
             <div class="export-doc__label2">Condiciones de instalación</div>
-            <div class="export-doc__row2"><span>Tipo de techo</span><b>${(instal.tipoTecho || '—')}</b></div>
-            <div class="export-doc__row2"><span>Sombras</span><b>${(instal.sombras || '—')} ${Number.isFinite(perdidasPct) ? `(${perdidasPct}%)` : ''}</b></div>
-            <div class="export-doc__row2"><span>Notas</span><b>${(instal.notasFisicas || '—')}</b></div>
+            <div class="export-doc__row2"><span>Tipo de techo</span><b>${esc(instal.tipoTecho || '—')}</b></div>
+            <div class="export-doc__row2"><span>Sombras</span><b>${esc(instal.sombras || '—')} ${Number.isFinite(perdidasPct) ? `(${perdidasPct}%)` : ''}</b></div>
+            <div class="export-doc__row2"><span>Notas</span><b>${esc(instal.notasFisicas || '—')}</b></div>
           </div>
         </div>
 
