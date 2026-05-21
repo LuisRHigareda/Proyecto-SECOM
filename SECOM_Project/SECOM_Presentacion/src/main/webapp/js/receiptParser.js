@@ -1,5 +1,6 @@
 import { loadUserPreferences } from './preferences.js';
 import { parseMoneyToNumber, parseIntSafe } from './utils.js';
+
 const MONTHS = {
     ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
     JUL: 7, AGO: 8, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
@@ -28,11 +29,13 @@ function buildLines(text) {
             .map(s => s.trim())
             .filter(Boolean);
 }
+
 function firstPositive(...values) {
     for (const v of values) {
         const n = Number(v || 0);
-        if (Number.isFinite(n) && n > 0)
+        if (Number.isFinite(n) && n > 0) {
             return n;
+        }
     }
     return 0;
 }
@@ -67,22 +70,30 @@ function extractBestServiceFromText(raw) {
             .map(normalizeServiceCandidate)
             .filter(v => v.length >= 8 && v.length <= 15)
             .sort((a, b) => b.length - a.length);
+
     return candidates[0] || '';
 }
 
 function looksLikeNameCandidate(line) {
     const raw = cleanLine(line);
     const up = normalizeUpper(raw);
-    if (!raw || raw.length < 6 || raw.length > 80)
+
+    if (!raw || raw.length < 6 || raw.length > 80) {
         return false;
-    if (isStopLabel(raw))
+    }
+    if (isStopLabel(raw)) {
         return false;
-    if (/\$\s*\d/.test(raw))
+    }
+    if (/\$\s*\d/.test(raw)) {
         return false;
-    if (/(RFC|TOTAL|PAGO|TARIFA|SERVICIO|PERIODO|MEDIDOR|HILOS|LECTURA|COMISION FEDERAL|CFE)/.test(up))
+    }
+    if (/(RFC|TOTAL|PAGO|TARIFA|SERVICIO|PERIODO|MEDIDOR|HILOS|LECTURA|COMISION FEDERAL|CFE)/.test(up)) {
         return false;
-    if ((raw.match(/\d/g) || []).length > 2)
+    }
+    if ((raw.match(/\d/g) || []).length > 2) {
         return false;
+    }
+
     const words = raw.split(/\s+/).filter(Boolean);
     return words.length >= 2 && words.length <= 8;
 }
@@ -90,26 +101,38 @@ function looksLikeNameCandidate(line) {
 function scoreAddressLine(line) {
     const raw = cleanLine(line);
     const up = normalizeUpper(raw);
-    if (!raw || isStopLabel(raw))
+
+    if (!raw || isStopLabel(raw)) {
         return -100;
-    if (/\$\s*\d/.test(raw))
+    }
+    if (/\$\s*\d/.test(raw)) {
         return -50;
+    }
+
     let score = 0;
-    if ((raw.match(/\d/g) || []).length >= 1)
+
+    if ((raw.match(/\d/g) || []).length >= 1) {
         score += 3;
-    if (ADDRESS_HINTS.some(h => up.includes(h)))
+    }
+    if (ADDRESS_HINTS.some(h => up.includes(h))) {
         score += 3;
-    if (/\,/.test(raw))
+    }
+    if (/\,/.test(raw)) {
         score += 1;
-    if (/\b\d{5}\b/.test(raw))
+    }
+    if (/\b\d{5}\b/.test(raw)) {
         score += 2;
-    if (raw.length >= 10)
+    }
+    if (raw.length >= 10) {
         score += 1;
+    }
+
     return score;
 }
 
 function isStopLabel(line) {
     const up = normalizeUpper(line);
+
     return [
         'NO DE SERVICIO',
         'NO. DE SERVICIO',
@@ -134,17 +157,22 @@ function looksLikeAddressLine(line) {
     const raw = cleanLine(line);
     const up = normalizeUpper(raw);
 
-    if (!raw || raw.length < 6)
+    if (!raw || raw.length < 6) {
         return false;
-    if (isStopLabel(raw))
+    }
+    if (isStopLabel(raw)) {
         return false;
-    if (/\$\s*\d/.test(raw))
+    }
+    if (/\$\s*\d/.test(raw)) {
         return false;
-    if (up.includes('TOTAL A PAGAR') || up.includes('ESTE GRAFICO'))
+    }
+    if (up.includes('TOTAL A PAGAR') || up.includes('ESTE GRAFICO')) {
         return false;
+    }
 
     return scoreAddressLine(raw) >= 2;
 }
+
 function parsePeriodo(text) {
     const upper = normalizeUpper(text);
 
@@ -152,8 +180,9 @@ function parsePeriodo(text) {
             /PERIODO\s+FACTURADO[:\s]*([0-3]?\d)\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s*(\d{2})\s*[-–]\s*([0-3]?\d)\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s*(\d{2})/
             );
 
-    if (!m)
+    if (!m) {
         return {raw: '', start: null, end: null, days: 0};
+    }
 
     const [, sd, sm, sy, ed, em, ey] = m;
     const start = new Date(2000 + parseIntSafe(sy), (MONTHS[sm] || 1) - 1, parseIntSafe(sd));
@@ -169,13 +198,19 @@ function parsePeriodo(text) {
 }
 
 function parseFechaCortaLabel(rawPeriodo) {
-    if (!rawPeriodo)
+    if (!rawPeriodo) {
         return '';
+    }
+
     const m = rawPeriodo.match(/(\d{2})\s+([A-Z]{3})\s+(\d{2})\s+-\s+(\d{2})\s+([A-Z]{3})\s+(\d{2})/i);
-    if (!m)
+
+    if (!m) {
         return rawPeriodo;
+    }
+
     return `${m[1]} ${m[2]} ${m[3]} - ${m[4]} ${m[5]} ${m[6]}`;
 }
+
 function canonicalPeriodLabel(value) {
     return normalizeUpper(value)
             .replace(/\bDEL\b/g, ' ')
@@ -189,6 +224,7 @@ function parseNombreDireccion(text) {
     const lines = buildLines(text).slice(0, 45);
 
     const labeledName = normalizeText(text).match(/(?:NOMBRE|CLIENTE|TITULAR)[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]{5,80})/i);
+
     if (labeledName) {
         const possibleAddress = lines.filter(looksLikeAddressLine).slice(0, 3).join(' ').trim();
         return {nombre: cleanLine(labeledName[1]), direccion: possibleAddress};
@@ -198,19 +234,27 @@ function parseNombreDireccion(text) {
 
     for (let i = 0; i < lines.length; i++) {
         const current = cleanLine(lines[i]);
-        if (!looksLikeNameCandidate(current))
+
+        if (!looksLikeNameCandidate(current)) {
             continue;
+        }
 
         const addressLines = [];
         let score = 2;
 
         for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
             const candidate = cleanLine(lines[j]);
-            if (!candidate)
+
+            if (!candidate) {
                 continue;
-            if (isStopLabel(candidate))
+            }
+
+            if (isStopLabel(candidate)) {
                 break;
+            }
+
             const lineScore = scoreAddressLine(candidate);
+
             if (lineScore >= 2) {
                 addressLines.push(candidate.replace(/\$.*$/, '').trim());
                 score += lineScore;
@@ -219,22 +263,32 @@ function parseNombreDireccion(text) {
             }
         }
 
-        if (addressLines.length >= 1)
+        if (addressLines.length >= 1) {
             score += addressLines.length * 2;
-        if ((current.match(/\b[A-ZÁÉÍÓÚÑ]{2,}\b/g) || []).length >= 2)
+        }
+
+        if ((current.match(/\b[A-ZÁÉÍÓÚÑ]{2,}\b/g) || []).length >= 2) {
             score += 2;
+        }
 
         const direccion = addressLines.join(' ').replace(/\s+/g, ' ').trim();
+
         if (score > best.score) {
-            best = {score, nombre: current.replace(/\$.*$/, '').trim(), direccion};
+            best = {
+                score,
+                nombre: current.replace(/\$.*$/, '').trim(),
+                direccion
+            };
         }
     }
 
-    if (best.score > 0)
+    if (best.score > 0) {
         return {nombre: best.nombre, direccion: best.direccion};
+    }
 
     return {nombre: '', direccion: ''};
 }
+
 function parseServicio(text) {
     const lines = buildLines(text);
     const labels = ['NO DE SERVICIO', 'NO. DE SERVICIO', 'NUMERO DE SERVICIO', 'NÚMERO DE SERVICIO'];
@@ -242,41 +296,54 @@ function parseServicio(text) {
     for (let i = 0; i < lines.length; i++) {
         const raw = cleanLine(lines[i]);
         const up = normalizeUpper(raw);
-        if (!labels.some(label => up.includes(label)))
+
+        if (!labels.some(label => up.includes(label))) {
             continue;
+        }
 
         const sameLineText = raw.replace(/.*?(?:NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO)[:\s]*/i, '');
         const sameLine = extractBestServiceFromText(sameLineText);
-        if (sameLine)
+
+        if (sameLine) {
             return sameLine;
+        }
 
         for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
             const nextCandidate = extractBestServiceFromText(lines[j]);
-            if (nextCandidate)
+
+            if (nextCandidate) {
                 return nextCandidate;
+            }
         }
     }
 
     const upper = normalizeUpper(text);
     const nearLabel = upper.match(/(?:NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO)[:\s]*([0-9OQILSBZ\s-]{8,22})/);
+
     if (nearLabel) {
         const candidate = normalizeServiceCandidate(nearLabel[1]);
-        if (candidate.length >= 8 && candidate.length <= 15)
+
+        if (candidate.length >= 8 && candidate.length <= 15) {
             return candidate;
+        }
     }
 
     return extractBestServiceFromText(text) || '';
 }
+
 function parseTarifa(text) {
     const lines = buildLines(text);
     const allowed = ['1', '1A', '1B', '1C', '1D', '1E', '1F', 'DAC', 'PDBT', 'GDBT', 'GDMTO', 'GDMTH'];
 
     for (const rawLine of lines) {
         const line = normalizeUpper(rawLine);
-        if (!line.includes('TARIFA'))
+
+        if (!line.includes('TARIFA')) {
             continue;
+        }
 
         const m = line.match(/TARIFA[:\s]*\b(1[A-F]?|DAC|PDBT|GDBT|GDMTO|GDMTH)\b/);
+
         if (m && allowed.includes(m[1])) {
             return m[1];
         }
@@ -314,10 +381,13 @@ function parseTotalAPagar(text) {
 
         if (up.includes('TOTAL A PAGAR')) {
             const m = line.match(/\$?\s*([\d,]+(?:\.\d{1,2})?)/);
+
             if (m) {
                 const n = parseMoneyToNumber(m[1]);
-                if (n > 0)
+
+                if (n > 0) {
                     return n;
+                }
             }
         }
     }
@@ -325,24 +395,33 @@ function parseTotalAPagar(text) {
     const full = normalizeText(text);
 
     let m = full.match(/DESGLOSE\s+DEL\s+IMPORTE\s+A\s+PAGAR[\s\S]{0,250}?\bTotal\b[^\d$]*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+
     if (m) {
         const n = parseMoneyToNumber(m[1]);
-        if (n > 0)
+
+        if (n > 0) {
             return n;
+        }
     }
 
     m = full.match(/\bTotal\b[^\d$]*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+
     if (m) {
         const n = parseMoneyToNumber(m[1]);
-        if (n > 0)
+
+        if (n > 0) {
             return n;
+        }
     }
 
     m = full.match(/TOTAL\s+A\s+PAGAR[\s\S]{0,80}?\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+
     if (m) {
         const n = parseMoneyToNumber(m[1]);
-        if (n > 0)
+
+        if (n > 0) {
             return n;
+        }
     }
 
     return 0;
@@ -371,6 +450,13 @@ function parseBaseCosts(text) {
     return {suministro, iva: ivaPct, dap, costoBase};
 }
 
+/**
+ * Detecta el consumo actual del periodo.
+ * Importante:
+ * - NO debe usar el historial como fallback.
+ * - El historial son periodos anteriores.
+ * - consumoPeriodo es el periodo actual del recibo.
+ */
 function parseConsumoPeriodo(text, historial = [], periodoRaw = '') {
     const lines = buildLines(text);
 
@@ -390,52 +476,122 @@ function parseConsumoPeriodo(text, historial = [], periodoRaw = '') {
     }
 
     const upText = normalizeUpper(text);
-    let m = upText.match(/ENERGIA\s*\(KWH\)[\s\S]{0,80}?(\d{1,3}(?:,\d{3})*)\s+(\d{1,3}(?:,\d{3})*)\s+(\d{1,3}(?:,\d{3})*)/);
+
+    let m = upText.match(/ENERGIA\s*\(KWH\)[\s\S]{0,100}?(\d{1,3}(?:,\d{3})*)\s+(\d{1,3}(?:,\d{3})*)\s+(\d{1,5})/);
+
     if (m) {
         return parseIntSafe(m[3]);
     }
 
-    if (Array.isArray(historial) && historial.length) {
-        const first = historial.find(x => Number(x?.kwh || 0) > 0);
-        if (first)
-            return Number(first.kwh);
+    m = upText.match(/LECTURA\s+ACTUAL[\s\S]{0,160}?LECTURA\s+ANTERIOR[\s\S]{0,160}?TOTAL\s+PERIODO[\s\S]{0,120}?(\d{1,5})/);
+
+    if (m) {
+        return parseIntSafe(m[1]);
     }
 
     return 0;
 }
 
 function parseEstadoFromDireccion(direccion) {
-    if (!direccion)
+    if (!direccion) {
         return '';
+    }
+
     const m = direccion.match(/,\s*([A-Za-zÁÉÍÓÚÑáéíóúñ. ]{2,})$/);
     return m ? m[1].replace(/\.+$/, '').trim().toUpperCase() : '';
 }
 
+/**
+ * Parser más tolerante para la tabla de consumo histórico.
+ *
+ * Soporta líneas como:
+ * del 20 ENE 26 al 18 FEB 26 185 $318.00 $318.00
+ * DEL 20 ENE 26 AL 18 FEB 26 185 318.00 318.00
+ *
+ * También tolera comas, signos de pesos y espacios irregulares.
+ */
 function parseHistoricalTable(text) {
-    const lines = buildLines(text);
     const rows = [];
+    const seen = new Set();
     const month = '(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)';
 
-    for (const rawLine of lines) {
-        const line = normalizeUpper(cleanLine(rawLine))
-                .replace(/\$/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-        const m = line.match(new RegExp(
-                `(?:DEL\\s+)?(\\d{2})\\s+${month}\\s+(\\d{2})\\s+(?:AL\\s+)?(\\d{2})\\s+${month}\\s+(\\d{2}).*?(\\d{2,5})\\s+([\\d,.]+)\\s+([\\d,.]+)(?:\\s+([\\d,.]+))?`
-                ));
+    const normalized = normalizeUpper(text)
+            .replace(/\$/g, ' ')
+            .replace(/,/g, '')
+            .replace(/[|]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
 
-        if (!m)
-            continue;
+    const regex = new RegExp(
+            `(?:DEL\\s+)?(\\d{1,2})\\s+${month}\\s+(\\d{2})\\s+(?:AL\\s+)?(\\d{1,2})\\s+${month}\\s+(\\d{2})\\s+(\\d{2,5})\\s+([\\d]+(?:\\.\\d{1,2})?)\\s+([\\d]+(?:\\.\\d{1,2})?)(?:\\s+([\\d]+(?:\\.\\d{1,2})?))?`,
+            'g'
+            );
 
+    let m;
+
+    while ((m = regex.exec(normalized)) !== null) {
         const periodo = `del ${m[1]} ${m[2]} ${m[3]} al ${m[4]} ${m[5]} ${m[6]}`;
         const kwh = parseIntSafe(m[7]);
         const importe = parseMoneyToNumber(m[8]);
         const pago = parseMoneyToNumber(m[9]);
         const pendiente = parseMoneyToNumber(m[10] || '0');
+        const key = canonicalPeriodLabel(periodo);
 
-        if (kwh > 0) {
-            rows.push({periodo, kwh, importe, pago, pendiente});
+        if (kwh > 0 && !seen.has(key)) {
+            rows.push({
+                periodo,
+                kwh,
+                importe,
+                pago,
+                pendiente
+            });
+            seen.add(key);
+        }
+    }
+
+    /*
+     * Fallback por líneas:
+     * Si por alguna razón el texto no se pudo normalizar completo,
+     * se intenta detectar línea por línea.
+     */
+    if (!rows.length) {
+        const lines = buildLines(text);
+
+        for (const rawLine of lines) {
+            const line = normalizeUpper(cleanLine(rawLine))
+                    .replace(/\$/g, ' ')
+                    .replace(/,/g, '')
+                    .replace(/[|]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+            const lineRegex = new RegExp(
+                    `(?:DEL\\s+)?(\\d{1,2})\\s+${month}\\s+(\\d{2})\\s+(?:AL\\s+)?(\\d{1,2})\\s+${month}\\s+(\\d{2}).*?(\\d{2,5})\\s+([\\d]+(?:\\.\\d{1,2})?)\\s+([\\d]+(?:\\.\\d{1,2})?)(?:\\s+([\\d]+(?:\\.\\d{1,2})?))?`
+                    );
+
+            const lm = line.match(lineRegex);
+
+            if (!lm) {
+                continue;
+            }
+
+            const periodo = `del ${lm[1]} ${lm[2]} ${lm[3]} al ${lm[4]} ${lm[5]} ${lm[6]}`;
+            const kwh = parseIntSafe(lm[7]);
+            const importe = parseMoneyToNumber(lm[8]);
+            const pago = parseMoneyToNumber(lm[9]);
+            const pendiente = parseMoneyToNumber(lm[10] || '0');
+            const key = canonicalPeriodLabel(periodo);
+
+            if (kwh > 0 && !seen.has(key)) {
+                rows.push({
+                    periodo,
+                    kwh,
+                    importe,
+                    pago,
+                    pendiente
+                });
+                seen.add(key);
+            }
         }
     }
 
@@ -449,18 +605,26 @@ function chooseBestText(primary, secondary) {
     const score = (txt) => {
         const up = normalizeUpper(txt);
         let n = 0;
-        if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO'))
+
+        if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO')) {
             n += 3;
-        if (up.includes('TARIFA'))
+        }
+        if (up.includes('TARIFA')) {
             n += 2;
-        if (up.includes('PERIODO FACTURADO'))
+        }
+        if (up.includes('PERIODO FACTURADO')) {
             n += 3;
-        if (up.includes('CONSUMO HISTORICO'))
+        }
+        if (up.includes('CONSUMO HISTORICO')) {
             n += 2;
-        if (up.includes('TOTAL A PAGAR'))
+        }
+        if (up.includes('TOTAL A PAGAR')) {
             n += 2;
-        if (up.includes('NO HILOS'))
+        }
+        if (up.includes('NO HILOS')) {
             n += 1;
+        }
+
         return n;
     };
 
@@ -469,8 +633,10 @@ function chooseBestText(primary, secondary) {
 
 function looksCorruptedText(text) {
     const up = normalizeUpper(text);
-    if (!up)
+
+    if (!up) {
         return true;
+    }
 
     const hasKeyFields =
             up.includes('NO DE SERVICIO') ||
@@ -478,8 +644,9 @@ function looksCorruptedText(text) {
             up.includes('PERIODO FACTURADO') ||
             up.includes('TOTAL A PAGAR');
 
-    if (!hasKeyFields)
+    if (!hasKeyFields) {
         return true;
+    }
 
     const strange = (text.match(/[ ]/g) || []).length;
     return strange > 5;
@@ -497,12 +664,24 @@ function parseCfeReceiptTextFromPages(page1Text, page2Text, mergedText) {
     const servicio = parseServicio(page1);
     const periodo = parsePeriodo(page1);
     const {nombre, direccion} = parseNombreDireccion(page1);
-    const historial = parseHistoricalTable(page2);
+
+    /*
+     * Primero intentamos detectar el historial en página 2.
+     * Si no se detecta, intentamos con todo el texto combinado.
+     */
+    let historial = parseHistoricalTable(page2);
+
+    if (!historial.length) {
+        historial = parseHistoricalTable(fullText);
+    }
+
     const consumoPeriodo = parseConsumoPeriodo(page1, historial, periodo?.raw || '');
+
     const total = firstPositive(
             parseTotalAPagar(page1),
             parseTotalAPagar(fullText)
             );
+
     const {suministro, iva, dap, costoBase} = parseBaseCosts(fullText);
     const hilos = parseHilos(bestPage1 || fullText);
     const medidor = parseMedidor(bestPage1 || fullText);
@@ -547,6 +726,7 @@ function groupPdfItemsToLines(items) {
     const rows = items
             .map(it => {
                 const tr = it.transform || [];
+
                 return {
                     str: (it.str || '').trim(),
                     x: Number(tr[4] || 0),
@@ -556,14 +736,18 @@ function groupPdfItemsToLines(items) {
             .filter(it => it.str);
 
     rows.sort((a, b) => {
-        if (Math.abs(b.y - a.y) > 2)
+        if (Math.abs(b.y - a.y) > 2) {
             return b.y - a.y;
+        }
+
         return a.x - b.x;
     });
 
     const lines = [];
+
     for (const item of rows) {
         const last = lines[lines.length - 1];
+
         if (!last || Math.abs(last.y - item.y) > 3) {
             lines.push({y: item.y, items: [item]});
         } else {
@@ -620,65 +804,87 @@ function createHighContrastCanvas(source) {
     const canvas = document.createElement('canvas');
     canvas.width = source.width;
     canvas.height = source.height;
+
     const ctx = canvas.getContext('2d', {alpha: false});
     ctx.drawImage(source, 0, 0);
+
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = img.data;
+
     for (let i = 0; i < data.length; i += 4) {
         const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
         const val = gray > 175 ? 255 : gray < 90 ? 0 : gray;
         data[i] = data[i + 1] = data[i + 2] = val;
     }
+
     ctx.putImageData(img, 0, 0);
+
     return canvas;
 }
 
 function scoreRecognizedText(text) {
     const up = normalizeUpper(text);
     const parsedName = parseNombreDireccion(text);
+
     let score = 0;
-    if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO'))
+
+    if (up.includes('NO DE SERVICIO') || up.includes('NO. DE SERVICIO')) {
         score += 5;
-    if (up.includes('PERIODO FACTURADO'))
+    }
+    if (up.includes('PERIODO FACTURADO')) {
         score += 4;
-    if (up.includes('TOTAL A PAGAR'))
+    }
+    if (up.includes('TOTAL A PAGAR')) {
         score += 4;
-    if (up.includes('TARIFA'))
+    }
+    if (up.includes('TARIFA')) {
         score += 3;
-    if (parseServicio(text))
+    }
+    if (parseServicio(text)) {
         score += 5;
-    if (parsedName.direccion)
+    }
+    if (parsedName.direccion) {
         score += 4;
-    if (parsedName.nombre)
+    }
+    if (parsedName.nombre) {
         score += 3;
+    }
+
     return score + Math.min(6, Math.round(String(text || '').length / 250));
 }
 
 async function runBestOcrVariant(canvas, pageIndex, onProgress) {
     const prefs = loadUserPreferences();
     const variants = [canvas];
+
     if (prefs?.ocr?.preferHighContrast !== false) {
         variants.push(createHighContrastCanvas(canvas));
     }
+
     let bestText = '';
     let bestScore = -Infinity;
+
     for (const variant of variants) {
         const text = await runOcrOnCanvas(variant, pageIndex, onProgress);
         const score = scoreRecognizedText(text);
+
         if (score > bestScore) {
             bestScore = score;
             bestText = text;
         }
+
         if (bestScore >= 18 && prefs?.ocr?.aggressiveMode === false) {
             break;
         }
     }
+
     return bestText;
 }
 
 async function runOcrOnCanvas(canvas, pageIndex, onProgress) {
-    if (!window.Tesseract)
+    if (!window.Tesseract) {
         return '';
+    }
 
     const psm = pageIndex === 1 ? '6' : '11';
 
@@ -696,10 +902,12 @@ async function runOcrOnCanvas(canvas, pageIndex, onProgress) {
     return normalizeText(result?.data?.text || '');
 }
 
-async function pdfToTextAndPreview(file, { onProgress } = {}){
+async function pdfToTextAndPreview(file, {onProgress} = {}) {
     const pdfjsLib = window.pdfjsLib;
-    if (!pdfjsLib)
+
+    if (!pdfjsLib) {
         return {text: '', pageTexts: [], canvas: null};
+    }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc =
             pdfjsLib.GlobalWorkerOptions.workerSrc ||
@@ -722,6 +930,7 @@ async function pdfToTextAndPreview(file, { onProgress } = {}){
         const ocrTexts = [];
 
         const pagesToOcr = Math.min(pdf.numPages, 2);
+
         for (let i = 1; i <= pagesToOcr; i++) {
             const page = await pdf.getPage(i);
             const canvas = await renderPageToCanvas(page, 2.0);
@@ -748,10 +957,12 @@ async function pdfToTextAndPreview(file, { onProgress } = {}){
 
 function seedFromString(str) {
     let h = 2166136261;
+
     for (let i = 0; i < str.length; i++) {
         h ^= str.charCodeAt(i);
         h = Math.imul(h, 16777619);
     }
+
     return (h >>> 0);
 }
 
@@ -760,6 +971,7 @@ function mulberry32(a) {
         let t = a += 0x6D2B79F5;
         t = Math.imul(t ^ (t >>> 15), t | 1);
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
@@ -767,16 +979,19 @@ function mulberry32(a) {
 function fmtPeriodo(start, end) {
     const m = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
     const d2 = (n) => String(n).padStart(2, '0');
+
     const sd = d2(start.getDate());
     const sm = m[start.getMonth()];
     const sy = String(start.getFullYear()).slice(-2);
+
     const ed = d2(end.getDate());
     const em = m[end.getMonth()];
     const ey = String(end.getFullYear()).slice(-2);
+
     return `${sd} ${sm} ${sy} - ${ed} ${em} ${ey}`;
 }
 
-function buildMockReceipt( { selectedTariff, file }){
+function buildMockReceipt({selectedTariff, file}) {
     const seed = seedFromString((file?.name || 'recibo') + '|' + (selectedTariff?.key || ''));
     const rnd = mulberry32(seed);
 
@@ -808,12 +1023,19 @@ function buildMockReceipt( { selectedTariff, file }){
             const opts = ['1', '1A', '1B', '1C', '1D', '1E', '1F', 'DAC'];
             return opts[Math.floor(rnd() * opts.length)];
         }
-        if (selectedTariff?.familia === 'PDBT')
+
+        if (selectedTariff?.familia === 'PDBT') {
             return 'PDBT';
-        if (selectedTariff?.familia === 'GDMTH')
+        }
+
+        if (selectedTariff?.familia === 'GDMTH') {
             return 'GDMTH';
-        if (selectedTariff?.familia === 'GDMTO')
+        }
+
+        if (selectedTariff?.familia === 'GDMTO') {
             return 'GDMTO';
+        }
+
         return selectedTariff?.label || '';
     })();
 
@@ -869,15 +1091,17 @@ export function createEmptyReceiptData(selectedTariff = null, rawText = '') {
     };
 }
 
-async function imageFileToTextAndPreview(file, { onProgress } = {}) {
+async function imageFileToTextAndPreview(file, {onProgress} = {}) {
     const imageBitmap = await createImageBitmap(file);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', {alpha: false});
 
     const maxSide = 1800;
     const scale = Math.min(1, maxSide / Math.max(imageBitmap.width, imageBitmap.height));
+
     canvas.width = Math.max(1, Math.round(imageBitmap.width * scale));
     canvas.height = Math.max(1, Math.round(imageBitmap.height * scale));
+
     ctx.drawImage(imageBitmap, 0, 0, canvas.width, canvas.height);
 
     if (onProgress) {
@@ -885,6 +1109,7 @@ async function imageFileToTextAndPreview(file, { onProgress } = {}) {
     }
 
     const text = await runBestOcrVariant(canvas, 1, onProgress);
+
     return {
         text,
         pageTexts: [text],
@@ -892,7 +1117,7 @@ async function imageFileToTextAndPreview(file, { onProgress } = {}) {
     };
 }
 
-export async function analyzeReceiptFile(file, options = {}){
+export async function analyzeReceiptFile(file, options = {}) {
     const {selectedTariff = null, onProgress} = options;
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(file.name || '');
@@ -903,8 +1128,9 @@ export async function analyzeReceiptFile(file, options = {}){
     let analysisOk = true;
     let manualReason = '';
 
-    if (onProgress)
+    if (onProgress) {
         onProgress({message: 'Preparando lectura…'});
+    }
 
     try {
         if (isPdf) {
@@ -924,15 +1150,18 @@ export async function analyzeReceiptFile(file, options = {}){
         console.error('Error leyendo recibo:', err);
         analysisOk = false;
         manualReason = err?.message || 'No se pudo leer el archivo.';
-        if (onProgress)
+
+        if (onProgress) {
             onProgress({message: `${manualReason} Se habilitará captura manual.`});
+        }
     }
 
     let parsed = null;
 
     if ((text || '').replace(/\s/g, '').length > 60) {
-        if (onProgress)
+        if (onProgress) {
             onProgress({message: 'Extrayendo datos del recibo…'});
+        }
 
         parsed = parseCfeReceiptTextFromPages(
                 pageTexts[0] || text,
@@ -943,8 +1172,11 @@ export async function analyzeReceiptFile(file, options = {}){
         const label = isPdf ? 'PDF' : 'imagen';
         analysisOk = false;
         manualReason = manualReason || `No se pudo extraer texto suficiente del ${label}.`;
-        if (onProgress)
+
+        if (onProgress) {
             onProgress({message: `${manualReason} Se habilitará captura manual.`});
+        }
+
         parsed = createEmptyReceiptData(selectedTariff, text || '');
     }
 
@@ -983,8 +1215,16 @@ export async function analyzeReceiptFile(file, options = {}){
             ? 'Recibo analizado correctamente.'
             : `${manualReason || 'No se pudo analizar el recibo.'} Se habilitará captura manual.`;
 
-    if (onProgress)
+    if (onProgress) {
         onProgress({message: analysisOk ? 'Listo.' : message});
+    }
 
-    return {ok: analysisOk, manual: !analysisOk, message, text, parsed, canvas};
+    return {
+        ok: analysisOk,
+        manual: !analysisOk,
+        message,
+        text,
+        parsed,
+        canvas
+    };
 }

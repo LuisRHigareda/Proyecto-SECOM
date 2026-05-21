@@ -4744,180 +4744,99 @@ wireStep1 = function () {
 /* ------------------------------
    Paso 2: Consumo
 ------------------------------ */
-function secomV2RenderConsumptionLeft() {
-
+function secomV2GetConsumptionMetrics() {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
-    const q = currentStep2Quote();
+    const historial = Array.isArray(r?.historial) ? r.historial : [];
 
-    const promedioMensual = Number(q?.consumoMensual || 0);
-    const promedioDiario = Number((promedioMensual * 1000) / 30 || 0);
+    const consumos = historial
+        .map(h => Number(h?.kwh || 0))
+        .filter(n => Number.isFinite(n) && n > 0);
 
-    const cfeMensual = Number(
-        q?.reciboMensual ||
-        r?.totalAPagar ||
-        0
-    );
+    const pagos = historial
+        .map(h => Number(h?.pago || 0))
+        .filter(n => Number.isFinite(n) && n > 0);
 
-    const promedioMensualDinero = cfeMensual;
-    const promedioAnualDinero = cfeMensual * 12;
+    const totalKwh = consumos.reduce((a, b) => a + b, 0);
+    const totalPagos = pagos.reduce((a, b) => a + b, 0);
 
-    const ajusteNota = r?.ajusteConsumo?.nota || '';
+    return {
+        promedioMensual: consumos.length ? totalKwh / consumos.length : Number(r?.consumoPeriodo || 0),
+        promedioDiarioWatts: consumos.length ? ((totalKwh / consumos.length) * 1000) / 30 : 0,
+        promedioCostoMensual: pagos.length ? totalPagos / pagos.length : Number(r?.totalAPagar || 0),
+        consumoMasAlto: consumos.length ? Math.max(...consumos) : Number(r?.consumoPeriodo || 0),
+        totalPagos,
+        tipoPeriodo: r?.tipoPeriodo || 'Mensual'
+    };
+}
+function secomV2RenderConsumptionLeft() {
+    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
+    const m = secomV2GetConsumptionMetrics();
+
+    const promedioMensual = Number(m.promedioMensual || 0);
+    const promedioDiario = Number(m.promedioDiarioWatts || 0);
+    const promedioCostoMensual = Number(m.promedioCostoMensual || 0);
+    const consumoMasAlto = Number(m.consumoMasAlto || 0);
+    const totalPagosRecibo = Number(m.totalPagos || 0);
+    const nota = r?.ajusteConsumo?.nota || '';
 
     return `
+    <div class="card__title">Información de consumo</div>
+    <div class="help">Analiza el consumo energético detectado del recibo antes del pre-cálculo.</div>
 
-    <div class="card consumption-card">
+    <div class="consumption-kpi-layout">
+      <div class="consumption-kpi-card consumption-kpi-blue">
+        <div class="consumption-kpi-icon"><i data-lucide="zap"></i></div>
+        <div class="consumption-kpi-label">Promedio mensual</div>
+        <div class="consumption-kpi-value">${formatNumber(promedioMensual)}</div>
+        <div class="consumption-kpi-unit">kWh/mes</div>
+      </div>
 
-        <div class="consumption-header">
-            <div>
-                <div class="card__title">
-                    Información de consumo
-                </div>
+      <div class="consumption-kpi-card consumption-kpi-purple">
+        <div class="consumption-kpi-icon"><i data-lucide="calendar-days"></i></div>
+        <div class="consumption-kpi-label">Promedio diario</div>
+        <div class="consumption-kpi-value">${formatNumber(promedioDiario)}</div>
+        <div class="consumption-kpi-unit">W/día</div>
+      </div>
 
-                <div class="help">
-                    Analiza el consumo energético detectado del recibo antes del pre-cálculo.
-                </div>
-            </div>
-        </div>
+      <div class="consumption-kpi-card consumption-kpi-green">
+        <div class="consumption-kpi-icon"><i data-lucide="dollar-sign"></i></div>
+        <div class="consumption-kpi-label">Promedio costo mensual</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioCostoMensual)}</div>
+        <div class="consumption-kpi-unit">MXN/mes</div>
+      </div>
 
-        <div class="consumption-kpi-grid">
+      <div class="consumption-kpi-card consumption-kpi-blue">
+        <div class="consumption-kpi-icon"><i data-lucide="bar-chart-3"></i></div>
+        <div class="consumption-kpi-label">Consumo más alto</div>
+        <div class="consumption-kpi-value">${formatNumber(consumoMasAlto)}</div>
+        <div class="consumption-kpi-unit">kWh</div>
+      </div>
 
-            <div class="consumption-kpi consumption-kpi--blue">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="zap"></i>
-                </div>
+      <div class="consumption-kpi-card consumption-kpi-purple">
+        <div class="consumption-kpi-icon"><i data-lucide="receipt"></i></div>
+        <div class="consumption-kpi-label">Total pagado histórico</div>
+        <div class="consumption-kpi-value">${formatCurrencyMXN(totalPagosRecibo)}</div>
+        <div class="consumption-kpi-unit">MXN recibo CFE</div>
+      </div>
 
-                <div class="consumption-kpi__label">
-                    Promedio mensual
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${formatNumberMX(promedioMensual)}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    kWh/mes
-                </div>
-            </div>
-
-            <div class="consumption-kpi consumption-kpi--purple">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="calendar-days"></i>
-                </div>
-
-                <div class="consumption-kpi__label">
-                    Promedio diario
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${formatNumberMX(promedioDiario)}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    W/día
-                </div>
-            </div>
-
-            <div class="consumption-kpi consumption-kpi--green">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="dollar-sign"></i>
-                </div>
-
-                <div class="consumption-kpi__label">
-                    CFE promedio $ 
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${formatCurrencyMXN(cfeMensual)}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    MXN/mes
-                </div>
-            </div>
-
-            <div class="consumption-kpi consumption-kpi--blue">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="receipt"></i>
-                </div>
-
-                <div class="consumption-kpi__label">
-                    Promedio $ consumo mensual
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${formatCurrencyMXN(promedioMensualDinero)}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    MXN/mes
-                </div>
-            </div>
-
-            <div class="consumption-kpi consumption-kpi--purple">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="trending-up"></i>
-                </div>
-
-                <div class="consumption-kpi__label">
-                    Promedio $ consumo anual
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${formatCurrencyMXN(promedioAnualDinero)}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    MXN/año
-                </div>
-            </div>
-
-            <div class="consumption-kpi consumption-kpi--green">
-                <div class="consumption-kpi__icon">
-                    <i data-lucide="calendar"></i>
-                </div>
-
-                <div class="consumption-kpi__label">
-                    Periodo
-                </div>
-
-                <div class="consumption-kpi__value">
-                    ${escapeHtml(r?.tipoPeriodo || 'Mensual')}
-                </div>
-
-                <div class="consumption-kpi__unit">
-                    tipo de recibo
-                </div>
-            </div>
-
-        </div>
-
-        <div class="field" style="margin-top:20px">
-            <label>Notas</label>
-
-            <textarea
-                id="rAjusteNota"
-                rows="2"
-                placeholder="Carga futura, ampliación, crecimiento del consumo, observaciones, etc."
-            >${escapeHtml(ajusteNota)}</textarea>
-        </div>
-
-        <div class="wizard-actions"
-             style="justify-content:space-between; margin-top:20px">
-
-            <button class="btn" id="btnBack2">
-                <i data-lucide="arrow-left"></i>
-                Volver
-            </button>
-
-            <button class="btn btn--success" id="btnNext2">
-                <i data-lucide="arrow-right"></i>
-                Continuar
-            </button>
-
-        </div>
-
+      <div class="consumption-kpi-card consumption-kpi-green">
+        <div class="consumption-kpi-icon"><i data-lucide="calendar"></i></div>
+        <div class="consumption-kpi-label">Periodo</div>
+        <div class="consumption-kpi-value">${escapeHtml(r?.tipoPeriodo || 'Mensual')}</div>
+        <div class="consumption-kpi-unit">tipo de recibo</div>
+      </div>
     </div>
-    `;
+
+    <div class="field" style="margin-top:18px">
+      <label>Notas</label>
+      <textarea id="rAjusteNota" rows="2" placeholder="Carga futura, ampliación, crecimiento del consumo, observaciones, etc.">${escapeHtml(nota)}</textarea>
+    </div>
+
+    <div class="wizard-actions" style="justify-content:space-between">
+      <button class="btn" id="btnBackConsumption"><i data-lucide="arrow-left"></i>Volver</button>
+      <button class="btn btn--success" id="btnNextConsumption"><i data-lucide="arrow-right"></i>Continuar</button>
+    </div>
+  `;
 }
 function secomV2GetHistoryPeriodLabel(h, i) {
     const raw =
@@ -5608,96 +5527,7 @@ buildStepper = function () {
 };
 
 
-secomV2RenderConsumptionLeft = function () {
-    const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
-    const q = currentStep2Quote();
 
-    const historial = Array.isArray(r?.historial) ? r.historial : [];
-
-    const pagos = historial
-        .map(h => Number(h?.pago || 0))
-        .filter(n => Number.isFinite(n) && n > 0);
-
-    const consumos = historial
-        .map(h => Number(h?.kwh || 0))
-        .filter(n => Number.isFinite(n) && n > 0);
-
-    const promedioMensual = Number(q?.consumoMensual || 0);
-    const promedioDiario = Number((promedioMensual * 1000) / 30 || 0);
-
-    const promedioCostoMensual = pagos.length
-        ? pagos.reduce((a, b) => a + b, 0) / pagos.length
-        : Number(q?.reciboMensual || r?.totalAPagar || 0);
-
-    const consumoMasAlto = consumos.length
-        ? Math.max(...consumos)
-        : Number(r?.consumoPeriodo || promedioMensual || 0);
-
-    const totalPagosRecibo = pagos.length
-        ? pagos.reduce((a, b) => a + b, 0)
-        : Number(r?.totalAPagar || promedioCostoMensual || 0);
-
-    const nota = r?.ajusteConsumo?.nota || '';
-
-    return `
-    <div class="card__title">Información de consumo</div>
-    <div class="help">Analiza el consumo energético detectado del recibo antes del pre-cálculo.</div>
-
-    <div class="consumption-kpi-layout">
-      <div class="consumption-kpi-card consumption-kpi-blue">
-        <div class="consumption-kpi-icon"><i data-lucide="zap"></i></div>
-        <div class="consumption-kpi-label">Promedio mensual</div>
-        <div class="consumption-kpi-value">${formatNumber(promedioMensual)}</div>
-        <div class="consumption-kpi-unit">kWh/mes</div>
-      </div>
-
-      <div class="consumption-kpi-card consumption-kpi-purple">
-        <div class="consumption-kpi-icon"><i data-lucide="calendar-days"></i></div>
-        <div class="consumption-kpi-label">Promedio diario</div>
-        <div class="consumption-kpi-value">${formatNumber(promedioDiario)}</div>
-        <div class="consumption-kpi-unit">W/día</div>
-      </div>
-
-      <div class="consumption-kpi-card consumption-kpi-green">
-        <div class="consumption-kpi-icon"><i data-lucide="dollar-sign"></i></div>
-        <div class="consumption-kpi-label">Promedio costo mensual</div>
-        <div class="consumption-kpi-value">${formatCurrencyMXN(promedioCostoMensual)}</div>
-        <div class="consumption-kpi-unit">MXN/mes</div>
-      </div>
-
-      <div class="consumption-kpi-card consumption-kpi-blue">
-        <div class="consumption-kpi-icon"><i data-lucide="bar-chart-3"></i></div>
-        <div class="consumption-kpi-label">Consumo más alto</div>
-        <div class="consumption-kpi-value">${formatNumber(consumoMasAlto)}</div>
-        <div class="consumption-kpi-unit">kWh</div>
-      </div>
-
-      <div class="consumption-kpi-card consumption-kpi-purple">
-        <div class="consumption-kpi-icon"><i data-lucide="receipt"></i></div>
-        <div class="consumption-kpi-label">Total pagado histórico</div>
-        <div class="consumption-kpi-value">${formatCurrencyMXN(totalPagosRecibo)}</div>
-        <div class="consumption-kpi-unit">MXN recibo CFE</div>
-      </div>
-
-      <div class="consumption-kpi-card consumption-kpi-green">
-        <div class="consumption-kpi-icon"><i data-lucide="calendar"></i></div>
-        <div class="consumption-kpi-label">Periodo</div>
-        <div class="consumption-kpi-value">${escapeHtml(r?.tipoPeriodo || 'Mensual')}</div>
-        <div class="consumption-kpi-unit">tipo de recibo</div>
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:18px">
-      <label>Notas</label>
-      <textarea id="rAjusteNota" rows="2" placeholder="Carga futura, ampliación, crecimiento del consumo, observaciones, etc.">${escapeHtml(nota)}</textarea>
-    </div>
-
-    <div class="wizard-actions" style="justify-content:space-between">
-      <button class="btn" id="btnBackConsumption"><i data-lucide="arrow-left"></i>Volver</button>
-      <button class="btn btn--success" id="btnNextConsumption"><i data-lucide="arrow-right"></i>Continuar</button>
-    </div>
-  `;
-};
 secomV2RenderConsumptionRight = function () {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const hist = (r?.historial || []).slice(-12);
@@ -6525,4 +6355,10 @@ function secomV2WirePackage() {
 
     window.lucide?.createIcons();
 }
+window.debugSECOM = () => {
+    console.log('receipt:', state.receipt);
+    console.log('historial:', state.receipt?.historial);
+    console.log('consumoPeriodo:', state.receipt?.consumoPeriodo);
+    console.log('metrics:', secomV2GetConsumptionMetrics());
+};
 init();
