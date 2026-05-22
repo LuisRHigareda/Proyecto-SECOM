@@ -47,12 +47,113 @@ function cleanLine(line) {
             .trim();
 }
 
+function removeAccentsUpper(line) {
+    return String(line || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase();
+}
+
+function stripRightColumnNoise(line) {
+    return cleanLine(line)
+            .replace(/\bTOTAL\s+A\s+PAGAR\b[\s\S]*$/i, '')
+            .replace(/\b(?:DESCARGA|APP\s+AUTORIZADA|PAGO\s+EN\s+LINEA)\b[\s\S]*$/i, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+}
+
+function isMoneyTextLine(line) {
+    const up = removeAccentsUpper(line);
+
+    return (
+        /\$\s*\d/.test(line || '') ||
+        up.includes('PESOS M.N') ||
+        up.includes('PESOS MN') ||
+        up.includes('TOTAL A PAGAR') ||
+        up.includes('CUATROCIENTOS') ||
+        up.includes('QUINIENTOS') ||
+        up.includes('SEISCIENTOS') ||
+        up.includes('SETECIENTOS') ||
+        up.includes('OCHOCIENTOS') ||
+        up.includes('NOVECIENTOS') ||
+        up.includes('MIL PESOS') ||
+        up.includes('PESOS 00/100')
+    );
+}
+
+function hasLongMixedIdentifier(line) {
+    const raw = String(line || '');
+    const up = removeAccentsUpper(raw);
+
+    if (ADDRESS_HINTS && ADDRESS_HINTS.some(h => up.includes(h))) {
+        return false;
+    }
+    if (/\b(CP|C\.P\.|CD|CIUDAD|COL|FRACC|BLVD|AV|CALLE)\b/.test(up)) {
+        return false;
+    }
+
+    const tokens = raw.match(/[A-Z0-9]{10,}/gi) || [];
+
+    return tokens.some(t => /[A-Z]/i.test(t) && /\d/.test(t));
+}
+
 const ADDRESS_HINTS = [
     'CALLE', 'AV', 'AV.', 'AVENIDA', 'BLVD', 'BOULEVARD', 'COL', 'COLONIA',
     'FRACC', 'FRACC.', 'SECCION', 'SECC', 'MANZANA', 'MZ', 'LOTE', 'LT', 'NUM',
     'NO', 'N°', 'CP', 'C.P.', 'INT', 'EXT', 'DEPTO', 'PRIV', 'PASEO', 'CARRETERA',
     'KM', 'RESIDENCIAL', 'VILLA', 'SECTOR', 'LOCALIDAD', 'MUNICIPIO'
 ];
+
+function isLikelyCfeCustomerName(line) {
+    const raw = stripRightColumnNoise(line);
+    const up = removeAccentsUpper(raw);
+
+    if (!looksLikeNameCandidate(raw)) {
+        return false;
+    }
+    if (isMoneyTextLine(raw) || hasLongMixedIdentifier(raw)) {
+        return false;
+    }
+    if (ADDRESS_HINTS.some(h => up.includes(h))) {
+        return false;
+    }
+    if (/,/.test(raw) || /\b(CD|CIUDAD|OBREGON|SON|SONORA|HERMOSILLO|NAVOJOA|CAJEME|GUAYMAS|NOGALES)\b/.test(up)) {
+        return false;
+    }
+    if (/\b(CFE|COMISION|FEDERAL|ELECTRICIDAD|SUCURSAL|CORREOS|AVISO|PAGO|PAGAR|CLIENTE|TARIFA|SERVICIO|RMU|CUENTA|REPARTIR|MENSUAL|BIMESTRAL)\b/.test(up)) {
+        return false;
+    }
+
+    const letters = (raw.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ]/g) || []).length;
+    const digits = (raw.match(/\d/g) || []).length;
+
+    return letters >= 8 && digits === 0;
+}
+
+function isLikelyCfeAddressLine(line) {
+    const raw = stripRightColumnNoise(line);
+    const up = removeAccentsUpper(raw);
+
+    if (!raw || raw.length < 4) {
+        return false;
+    }
+    if (isMoneyTextLine(raw) || isStopLabel(raw) || hasLongMixedIdentifier(raw)) {
+        return false;
+    }
+    if (/\b(RMU|CUENTA|NO\.?\s*DE\s*SERVICIO|LIMITE|CORTE|TOTAL|PAGAR|COMISION|FEDERAL|ELECTRICIDAD|DESCARGA|APP|AUTORIZADA|REPARTIR)\b/.test(up)) {
+        return false;
+    }
+    if (!/\s/.test(raw) && /^[A-Z0-9]{12,}/i.test(raw.replace(/\s+/g, ''))) {
+        return false;
+    }
+
+    const hasDigit = /\d/.test(raw);
+    const hasHint = ADDRESS_HINTS.some(h => up.includes(h));
+    const hasCityState = /\b(CD|CIUDAD|OBREGON|SON|SONORA|HERMOSILLO|NAVOJOA|CAJEME|GUAYMAS|NOGALES|MEXICO|MEX)\b/.test(up);
+    const enoughLetters = (raw.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ]/g) || []).length >= 4;
+
+    return enoughLetters && (hasDigit || hasHint || hasCityState || /,/.test(raw));
+}
 
 function normalizeServiceCandidate(raw) {
     return String(raw || '')
@@ -84,10 +185,10 @@ function looksLikeNameCandidate(line) {
     if (isStopLabel(raw)) {
         return false;
     }
-    if (/\$\s*\d/.test(raw)) {
+    if (/\$\s*\d/.test(raw) || isMoneyTextLine(raw) || hasLongMixedIdentifier(raw)) {
         return false;
     }
-    if (/(RFC|TOTAL|PAGO|TARIFA|SERVICIO|PERIODO|MEDIDOR|HILOS|LECTURA|COMISION FEDERAL|CFE)/.test(up)) {
+    if (/(RFC|TOTAL|PAGO|PAGAR|PESOS|TARIFA|SERVICIO|PERIODO|MEDIDOR|HILOS|LECTURA|COMISION FEDERAL|CFE|CUENTA|RMU|RPU|REPARTIR)/.test(up)) {
         return false;
     }
     if ((raw.match(/\d/g) || []).length > 2) {
@@ -105,7 +206,7 @@ function scoreAddressLine(line) {
     if (!raw || isStopLabel(raw)) {
         return -100;
     }
-    if (/\$\s*\d/.test(raw)) {
+    if (/\$\s*\d/.test(raw) || isMoneyTextLine(raw) || hasLongMixedIdentifier(raw)) {
         return -50;
     }
 
@@ -136,10 +237,17 @@ function isStopLabel(line) {
     return [
         'NO DE SERVICIO',
         'NO. DE SERVICIO',
+        'NUMERO DE SERVICIO',
+        'NÚMERO DE SERVICIO',
         'CUENTA:',
+        'CUENTA',
+        'RMU',
+        'RPU',
+        'REPARTIR',
         'LIMITE DE PAGO',
         'CORTE A PARTIR',
         'TARIFA:',
+        'TARIFA',
         'NO HILOS',
         'PERIODO FACTURADO',
         'LECTURA ACTUAL',
@@ -148,8 +256,11 @@ function isStopLabel(line) {
         'DESGLOSE DEL IMPORTE',
         'SUBTOTAL',
         'CONSUMO HISTORICO',
+        'TOTAL A PAGAR',
         'DESCARGA NUESTRA APP',
-        'APP AUTORIZADA'
+        'APP AUTORIZADA',
+        'COMISION FEDERAL',
+        'COMISIÓN FEDERAL'
     ].some(x => up.includes(x));
 }
 
@@ -163,10 +274,10 @@ function looksLikeAddressLine(line) {
     if (isStopLabel(raw)) {
         return false;
     }
-    if (/\$\s*\d/.test(raw)) {
+    if (/\$\s*\d/.test(raw) || isMoneyTextLine(raw) || hasLongMixedIdentifier(raw)) {
         return false;
     }
-    if (up.includes('TOTAL A PAGAR') || up.includes('ESTE GRAFICO')) {
+    if (up.includes('TOTAL A PAGAR') || up.includes('ESTE GRAFICO') || up.includes('REPARTIR') || up.includes('CUENTA') || up.includes('RMU')) {
         return false;
     }
 
@@ -220,12 +331,79 @@ function canonicalPeriodLabel(value) {
             .trim();
 }
 
+
+function parseCfeCustomerBlock(text) {
+    const originalLines = buildLines(text).slice(0, 80);
+    const lines = originalLines
+            .map(stripRightColumnNoise)
+            .map(cleanLine)
+            .filter(Boolean);
+
+    const serviceIndex = lines.findIndex(line => /NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO|NÚMERO\s+DE\s+SERVICIO/i.test(removeAccentsUpper(line)));
+    const cut = serviceIndex > 0 ? serviceIndex : Math.min(lines.length, 45);
+    const head = lines.slice(0, cut);
+
+    let nameIndex = -1;
+
+    for (let i = 0; i < head.length; i++) {
+        const line = head[i];
+
+        if (isLikelyCfeCustomerName(line)) {
+            const following = head.slice(i + 1, Math.min(head.length, i + 7));
+            const addressCount = following.filter(isLikelyCfeAddressLine).length;
+
+            if (addressCount >= 1 || i < 12) {
+                nameIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (nameIndex < 0) {
+        return {nombre: '', direccion: ''};
+    }
+
+    const nombre = cleanLine(head[nameIndex]);
+    const addressLines = [];
+
+    for (let i = nameIndex + 1; i < head.length; i++) {
+        const line = cleanLine(head[i]);
+        const up = removeAccentsUpper(line);
+
+        if (!line) {
+            continue;
+        }
+        if (isLikelyCfeCustomerName(line) && addressLines.length) {
+            break;
+        }
+        if (/NO\.?\s*DE\s*SERVICIO|NUMERO\s+DE\s+SERVICIO|RMU|CUENTA|TOTAL\s+A\s+PAGAR|LIMITE\s+DE\s+PAGO|CORTE\s+A\s+PARTIR/i.test(up)) {
+            break;
+        }
+        if (isLikelyCfeAddressLine(line)) {
+            addressLines.push(line);
+        } else if (addressLines.length >= 2) {
+            break;
+        }
+    }
+
+    return {
+        nombre,
+        direccion: addressLines.join(' ').replace(/\s+/g, ' ').trim(),
+    };
+}
+
 function parseNombreDireccion(text) {
+    const cfeBlock = parseCfeCustomerBlock(text);
+
+    if (cfeBlock.nombre || cfeBlock.direccion) {
+        return cfeBlock;
+    }
+
     const lines = buildLines(text).slice(0, 45);
 
     const labeledName = normalizeText(text).match(/(?:NOMBRE|CLIENTE|TITULAR)[:\s]+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s.]{5,80})/i);
 
-    if (labeledName) {
+    if (labeledName && !isMoneyTextLine(labeledName[1])) {
         const possibleAddress = lines.filter(looksLikeAddressLine).slice(0, 3).join(' ').trim();
         return {nombre: cleanLine(labeledName[1]), direccion: possibleAddress};
     }
@@ -334,22 +512,35 @@ function parseServicio(text) {
 function parseTarifa(text) {
     const lines = buildLines(text);
     const allowed = ['1', '1A', '1B', '1C', '1D', '1E', '1F', 'DAC', 'PDBT', 'GDBT', 'GDMTO', 'GDMTH'];
+    const tariffRegex = /\b(1[A-F]?|DAC|PDBT|GDBT|GDMTO|GDMTH)\b/;
 
-    for (const rawLine of lines) {
-        const line = normalizeUpper(rawLine);
+    for (let i = 0; i < lines.length; i++) {
+        const line = normalizeUpper(lines[i]);
 
         if (!line.includes('TARIFA')) {
             continue;
         }
 
-        const m = line.match(/TARIFA[:\s]*\b(1[A-F]?|DAC|PDBT|GDBT|GDMTO|GDMTH)\b/);
+        const afterLabel = line.replace(/^.*?TARIFA[:\s]*/i, ' ');
+        let m = afterLabel.match(tariffRegex);
 
         if (m && allowed.includes(m[1])) {
             return m[1];
         }
+
+        for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
+            m = normalizeUpper(lines[j]).match(tariffRegex);
+
+            if (m && allowed.includes(m[1])) {
+                return m[1];
+            }
+        }
     }
 
-    return '';
+    const full = normalizeUpper(text);
+    const m = full.match(/TARIFA[\s:.-]{0,20}(1[A-F]?|DAC|PDBT|GDBT|GDMTO|GDMTH)\b/);
+
+    return m && allowed.includes(m[1]) ? m[1] : '';
 }
 
 function parseHilos(text) {
@@ -465,7 +656,7 @@ function parseConsumoPeriodo(text, historial = [], periodoRaw = '') {
         const up = normalizeUpper(line);
 
         if (up.includes('ENERGIA (KWH)') || up.includes('ENERGIA KWH')) {
-            const nums = (line.match(/\d{1,3}(?:,\d{3})*/g) || [])
+            const nums = (line.match(/\d{1,5}(?:,\d{3})*/g) || [])
                     .map(v => parseIntSafe(v))
                     .filter(n => n > 0);
 
@@ -477,7 +668,7 @@ function parseConsumoPeriodo(text, historial = [], periodoRaw = '') {
 
     const upText = normalizeUpper(text);
 
-    let m = upText.match(/ENERGIA\s*\(KWH\)[\s\S]{0,100}?(\d{1,3}(?:,\d{3})*)\s+(\d{1,3}(?:,\d{3})*)\s+(\d{1,5})/);
+    let m = upText.match(/ENERGIA\s*\(KWH\)[\s\S]{0,100}?(\d{1,5}(?:,\d{3})*)\s+(\d{1,5}(?:,\d{3})*)\s+(\d{1,5})/);
 
     if (m) {
         return parseIntSafe(m[3]);
@@ -963,56 +1154,130 @@ async function runOcrOnCanvas(canvas, pageIndex, onProgress) {
     return normalizeText(result?.data?.text || '');
 }
 
-async function pdfToTextAndPreview(file, {onProgress} = {}) {
-    const pdfjsLib = window.pdfjsLib;
-
-    if (!pdfjsLib) {
-        return {text: '', pageTexts: [], canvas: null};
+async function extractPdfTextWithPdfBox(file, onProgress) {
+    if (onProgress) {
+        onProgress({message: 'Leyendo texto real del PDF con PDFBox…'});
     }
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-            pdfjsLib.GlobalWorkerOptions.workerSrc ||
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const formData = new FormData();
+    formData.append('file', file);
 
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    const response = await fetch('api/receipts/pdf-text', {
+        method: 'POST',
+        body: formData,
+    });
 
-    const pageTexts = await extractPdfTextByPage(pdf, onProgress);
+    const payload = await response.json().catch(() => null);
 
-    const firstPage = await pdf.getPage(1);
-    const previewCanvas = await renderPageToCanvas(firstPage, 0.8);
+    if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || 'No se pudo leer el PDF con PDFBox.');
+    }
 
-    let mergedText = pageTexts.join('\n\n');
+    return payload.data || {};
+}
 
-    const missingHistory = !normalizeUpper(mergedText).includes('CONSUMO HISTORICO');
-    const poorText = looksCorruptedText(mergedText) || missingHistory;
+function hasEnoughPdfText(text) {
+    const compact = String(text || '').replace(/\s/g, '');
+    if (compact.length < 80) {
+        return false;
+    }
 
-    if (poorText && window.Tesseract) {
-        const ocrTexts = [];
+    const up = normalizeUpper(text);
+    return (
+        up.includes('NO DE SERVICIO') ||
+        up.includes('NO. DE SERVICIO') ||
+        up.includes('PERIODO FACTURADO') ||
+        up.includes('TOTAL A PAGAR') ||
+        up.includes('TARIFA')
+    );
+}
 
-        const pagesToOcr = Math.min(pdf.numPages, 2);
+async function pdfToTextAndPreview(file, {onProgress} = {}) {
+    let pdfBoxResult = null;
+    let pdfBoxError = null;
 
-        for (let i = 1; i <= pagesToOcr; i++) {
-            const page = await pdf.getPage(i);
-            const canvas = await renderPageToCanvas(page, 2.0);
-            const ocrText = await runBestOcrVariant(canvas, i, onProgress);
-            ocrTexts.push(ocrText);
-        }
+    try {
+        pdfBoxResult = await extractPdfTextWithPdfBox(file, onProgress);
+    } catch (err) {
+        pdfBoxError = err;
+        console.warn('PDFBox no pudo extraer texto del PDF:', err?.message || err);
+    }
 
-        const combined = ocrTexts.join('\n\n');
-        mergedText = normalizeText([mergedText, combined].filter(Boolean).join('\n\n'));
+    const pdfjsLib = window.pdfjsLib;
+    let previewCanvas = null;
+    let pdfJsPageTexts = [];
 
-        for (let i = 0; i < ocrTexts.length; i++) {
-            if ((ocrTexts[i] || '').length > (pageTexts[i] || '').length * 0.6) {
-                pageTexts[i] = chooseBestText(pageTexts[i], ocrTexts[i]);
+    if (pdfjsLib) {
+        try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                    pdfjsLib.GlobalWorkerOptions.workerSrc ||
+                    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+
+            const firstPage = await pdf.getPage(1);
+            previewCanvas = await renderPageToCanvas(firstPage, 0.8);
+
+            if (!hasEnoughPdfText(pdfBoxResult?.text || '')) {
+                pdfJsPageTexts = await extractPdfTextByPage(pdf, onProgress);
             }
+        } catch (err) {
+            console.warn('No se pudo leer o previsualizar el PDF con PDF.js:', err?.message || err);
         }
+    }
+
+    const pdfBoxText = normalizeText(pdfBoxResult?.text || '');
+    const pdfBoxPages = Array.isArray(pdfBoxResult?.pageTexts)
+            ? pdfBoxResult.pageTexts.map(normalizeText)
+            : [];
+
+    if (hasEnoughPdfText(pdfBoxText)) {
+        if (onProgress) {
+            onProgress({message: 'PDF leído correctamente con texto real.'});
+        }
+
+        return {
+            text: pdfBoxText,
+            pageTexts: pdfBoxPages.length ? pdfBoxPages : [pdfBoxText],
+            canvas: previewCanvas,
+            source: 'PDFBox',
+        };
+    }
+
+    const pdfJsText = normalizeText(pdfJsPageTexts.join('\n\n'));
+
+    if (hasEnoughPdfText(pdfJsText)) {
+        if (onProgress) {
+            onProgress({message: 'PDF leído con texto interno del documento.'});
+        }
+
+        return {
+            text: pdfJsText,
+            pageTexts: pdfJsPageTexts,
+            canvas: previewCanvas,
+            source: 'PDF.js',
+        };
+    }
+
+    /*
+     * Para PDFs se evita OCR automático: si el archivo está escaneado o es una imagen
+     * dentro de un PDF, se habilita captura manual para no llenar la cotización con
+     * datos inventados o mal reconocidos. El OCR se mantiene solo para imágenes.
+     */
+    if (onProgress) {
+        onProgress({
+            message: pdfBoxError?.message
+                    ? `${pdfBoxError.message} Se habilitará captura manual.`
+                    : 'El PDF no contiene texto real suficiente. Se habilitará captura manual.'
+        });
     }
 
     return {
-        text: mergedText,
-        pageTexts,
+        text: normalizeText([pdfBoxText, pdfJsText].filter(Boolean).join('\n\n')),
+        pageTexts: pdfBoxPages.length ? pdfBoxPages : pdfJsPageTexts,
         canvas: previewCanvas,
+        source: pdfBoxText ? 'PDFBox parcial' : 'Sin texto suficiente',
     };
 }
 
