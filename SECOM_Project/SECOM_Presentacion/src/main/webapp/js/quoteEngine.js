@@ -86,28 +86,26 @@ export function computeQuote(receipt, client, params, overrides) {
     // 1) promedio mensual ya extraído del recibo, o 2) historial + recibo actual normalizados a mes.
     const pagoActualPeriodo = Number(receipt?.totalAPagar || 0);
     const normalizaPagoMensual = (value) => isBimestral ? (Number(value || 0) / 2) : Number(value || 0);
-    const pagoProm = (() => {
-        const pagoPromedioRecibo = Number(receipt?.pagoPromedioMensual || 0);
-        if (pagoPromedioRecibo > 0) return Math.max(0, pagoPromedioRecibo);
-
-        const pagosHistoricos = (Array.isArray(receipt?.historial) ? receipt.historial : [])
-            .map(x => Number(x?.pago || x?.importe || 0))
-            .filter(n => Number.isFinite(n) && n > 0)
-            .map(normalizaPagoMensual);
-
-        const pagosMensuales = pagoActualPeriodo > 0
-            ? [...pagosHistoricos, normalizaPagoMensual(pagoActualPeriodo)]
-            : pagosHistoricos;
-
-        if (!pagosMensuales.length) return 0;
-        return Math.max(0, pagosMensuales.reduce((a, b) => a + b, 0) / pagosMensuales.length);
-    })();
+    const pagosHistoricos = (Array.isArray(receipt?.historial) ? receipt.historial : [])
+        .map(x => Number(x?.pago || x?.importe || 0))
+        .filter(n => Number.isFinite(n) && n > 0)
+        .map(normalizaPagoMensual);
+    const pagosMensuales = pagoActualPeriodo > 0
+        ? [...pagosHistoricos, normalizaPagoMensual(pagoActualPeriodo)]
+        : pagosHistoricos;
+    const pagoPromedioHistorial = pagosMensuales.length
+        ? Math.max(0, pagosMensuales.reduce((a, b) => a + b, 0) / pagosMensuales.length)
+        : 0;
+    const pagoPromedioRecibo = Math.max(0, Number(receipt?.pagoPromedioMensual || 0));
+    const pagoProm = Math.max(pagoPromedioRecibo, pagoPromedioHistorial);
 
     const coberturaDisenio = consumoMensual > 0 ? clamp((kwpFinal * yieldEfectivo) / consumoMensual, 0, 1) : 0;
-    const ahorroRecibo = Math.max(0, Number(receipt?.ahorroEstimado || 0));
-    const ahorroMensualEstimado = ahorroRecibo > 0
-        ? Math.min(pagoProm || ahorroRecibo, normalizaPagoMensual(ahorroRecibo))
-        : Math.max(0, pagoProm * coberturaDisenio);
+    const ahorroRecibo = Math.max(0, normalizaPagoMensual(Number(receipt?.ahorroEstimado || 0)));
+    const ahorroPorCobertura = Math.max(0, pagoProm * coberturaDisenio);
+    const ahorroMensualEstimado = Math.min(
+        pagoProm || Math.max(ahorroPorCobertura, ahorroRecibo),
+        Math.max(ahorroPorCobertura, ahorroRecibo)
+    );
 
     // Si existe un desglose de insumos con precios, se usa como total de inversión
     const insumos = Array.isArray(receipt?.insumos) ? receipt.insumos : [];
