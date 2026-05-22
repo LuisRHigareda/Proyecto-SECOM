@@ -284,22 +284,26 @@ export function buildExportHtml(quote) {
             <div class="secom-template-logo"><img src="assets/logo.png" alt="SECOM" /></div>
             <div class="secom-template-title">
                 <h1>${esc(companyName)}</h1>
-                <div class="secom-template-client">
-                    <div><span>Datos del cliente</span></div>
-                    <div><b>Nombre</b> ${esc(c.nombre || r.nombre || '—')}</div>
-                    <div><b>Dirección</b> ${esc(c.direccion || r.direccion || '—')}</div>
-                    <div><b>Número de Servicio (RPU):</b> ${esc(r.servicio || '—')}</div>
-                    <div><b>Tarifa:</b> ${esc(tarifa)}</div>
-                </div>
             </div>
             <div class="secom-template-date">${esc(fecha)}</div>
         </header>
 
-        <section class="secom-template-kpis">
-            <div><b>Producción diaria de energía</b> <span>${formatNumber(produccionDiariaWh)}</span></div>
-            <div><b>% Producción vs Consumo</b> <span>${formatNumber(cobertura)}%</span></div>
-            <div><b>Consumo promedio diario de energía</b> <span>${formatNumber(consumoDiarioWh)}</span></div>
-            <div><b>Watts instalados</b> <span>${formatNumber(wattsInstalados)}</span></div>
+        <section class="secom-template-meta">
+            <div class="secom-template-client">
+                <div class="secom-template-client-title">Datos del cliente</div>
+                <div class="secom-template-client-grid">
+                    <div class="row"><span>Nombre:</span><b>${esc(c.nombre || r.nombre || '—')}</b></div>
+                    <div class="row"><span>Dirección:</span><b>${esc(c.direccion || r.direccion || '—')}</b></div>
+                    <div class="row"><span>Número de Servicio (RPU):</span><b>${esc(r.servicio || '—')}</b></div>
+                    <div class="row"><span>Tarifa:</span><b>${esc(tarifa)}</b></div>
+                </div>
+            </div>
+            <div class="secom-template-kpis">
+                <div class="kpi"><b>Producción diaria de energía</b><span>${formatNumber(produccionDiariaWh)}</span></div>
+                <div class="kpi"><b>% Producción vs Consumo</b><span>${formatNumber(cobertura)}%</span></div>
+                <div class="kpi"><b>Consumo promedio diario de energía</b><span>${formatNumber(consumoDiarioWh)}</span></div>
+                <div class="kpi"><b>Watts instalados</b><span>${formatNumber(wattsInstalados)}</span></div>
+            </div>
         </section>
 
         <table class="secom-template-table">
@@ -329,7 +333,7 @@ export function buildExportHtml(quote) {
                 <div><b>IVA:</b><span>${formatCurrencyMXN(iva)}</span></div>
                 <div class="total"><b>Total:</b><span>${formatCurrencyMXN(total)}</span></div>
             </div>
-            <div class="roi-box"><b>Recuperación de la<br/>Inversión</b><span>${retorno ? formatNumber(retorno) : '—'} Años</span></div>
+            <div class="roi-box"><b>Recuperación de la inversión</b><span>${retorno ? formatNumber(retorno) : '—'} años</span></div>
         </section>
 
         <section class="secom-template-chart-wrap">
@@ -357,14 +361,14 @@ export function buildExportHtml(quote) {
         </section>
 
         <footer class="secom-template-footer">
-            <div class="footer-address">${esc(direccionEmpresa)}</div>
             <div class="signature">
                 <div>ATENTAMENTE</div>
                 <span></span>
                 <b>${esc(advisor)}</b>
                 <small>${esc(role)}</small>
             </div>
-            <div class="cert-badge"><b>INSTALADOR<br/>SECOM</b><span>ENERGÍA SOLAR</span></div>
+            <div class="cert-badge"><img src="assets/sello-certificado.png" alt="Instalador certificado SECOM" /></div>
+            <div class="footer-address">${esc(direccionEmpresa)}</div>
         </footer>
     </div>`;
 }

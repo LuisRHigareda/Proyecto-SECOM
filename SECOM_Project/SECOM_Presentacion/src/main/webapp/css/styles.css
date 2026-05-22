@@ -3080,15 +3080,15 @@ body.theme-light select option{
    Formato final SECOM V3.1 - estilo de plantilla original
    ========================================================= */
 .export-doc--secom-template{
-    width:1020px !important;
-    min-height:1320px !important;
-    max-width:1020px !important;
+    width:940px !important;
+    min-height:1280px !important;
+    max-width:940px !important;
     background:#ffffff !important;
     color:#0b1220 !important;
-    padding:28px 29px 22px !important;
+    padding:34px 34px 28px !important;
     font-family:Arial, Helvetica, sans-serif !important;
     font-size:12px !important;
-    line-height:1.18 !important;
+    line-height:1.26 !important;
     border:0 !important;
     border-radius:0 !important;
     box-shadow:none !important;
@@ -3097,148 +3097,162 @@ body.theme-light select option{
 .export-doc--secom-template,
 .export-doc--secom-template *{
     box-sizing:border-box !important;
-    color:#0b1220;
     text-shadow:none !important;
     letter-spacing:0 !important;
     word-break:normal !important;
-    overflow-wrap:normal !important;
+    overflow-wrap:anywhere !important;
     hyphens:none !important;
 }
 .secom-template-header{
     display:grid;
-    grid-template-columns:128px 1fr 185px;
-    column-gap:8px;
+    grid-template-columns:150px 1fr 250px;
     align-items:start;
+    column-gap:24px;
 }
 .secom-template-logo img{
-    width:122px;
-    height:198px;
+    width:118px;
+    height:auto;
     object-fit:contain;
-    object-position:left top;
+    display:block;
 }
 .secom-template-title h1{
-    margin:22px 0 22px;
-    color:#1f4f86 !important;
-    font-family:Georgia, 'Times New Roman', serif !important;
-    font-size:37px;
-    line-height:1.05;
-    letter-spacing:.01em !important;
-    font-weight:900;
-    text-transform:uppercase;
-    white-space:normal;
-}
-.secom-template-client{
-    margin-top:2px;
-    max-width:590px;
-    font-size:11px;
-    line-height:1.05;
+    margin:6px 0 0;
+    color:#244e85 !important;
+    font-family:Georgia, "Times New Roman", serif !important;
+    font-size:62px;
+    line-height:0.95;
     font-weight:700;
-}
-.secom-template-client div:first-child span{
-    color:#475569 !important;
-    font-weight:800;
-}
-.secom-template-client b{
-    font-weight:900;
-    color:#334155 !important;
+    text-transform:uppercase;
 }
 .secom-template-date{
-    margin-top:86px;
-    color:#1f4f86 !important;
+    color:#244e85 !important;
+    font-weight:700;
+    font-size:17px;
+    text-align:right;
+    align-self:center;
+    padding-top:14px;
+}
+.secom-template-meta{
+    display:grid;
+    grid-template-columns:1.2fr 1fr;
+    gap:28px;
+    margin-top:10px;
+    align-items:start;
+}
+.secom-template-client{
+    font-size:15px;
+    line-height:1.25;
+    font-weight:700;
+}
+.secom-template-client-title{
+    color:#4b5563 !important;
+    font-size:15px;
+    font-weight:800;
+    margin-bottom:8px;
+}
+.secom-template-client-grid .row{
+    display:grid;
+    grid-template-columns:210px 1fr;
+    gap:10px;
+    margin-bottom:5px;
+    align-items:start;
+}
+.secom-template-client-grid span{
+    color:#334155 !important;
+    font-weight:800;
+}
+.secom-template-client-grid b{
+    color:#0f172a !important;
     font-weight:900;
-    font-size:12px;
-    text-align:left;
 }
 .secom-template-kpis{
     display:grid;
     grid-template-columns:1fr 1fr;
-    gap:0 18px;
-    width:505px;
-    margin:-39px 60px 9px auto;
-    font-size:11px;
-    line-height:1.05;
-    font-weight:900;
+    gap:12px 24px;
+    padding-top:26px;
 }
-.secom-template-kpis div{
-    display:flex;
-    justify-content:flex-end;
-    gap:7px;
-    min-height:14px;
+.secom-template-kpis .kpi{
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:8px;
+    align-items:end;
 }
 .secom-template-kpis b{
-    color:#1f4f86 !important;
+    color:#244e85 !important;
+    font-size:14px;
+    line-height:1.15;
+    font-weight:800;
     text-align:right;
 }
 .secom-template-kpis span{
     color:#6b7280 !important;
-    min-width:58px;
+    font-size:16px;
+    font-weight:800;
     text-align:left;
+    white-space:nowrap;
 }
 .secom-template-table{
     width:100% !important;
     table-layout:fixed !important;
     border-collapse:collapse !important;
-    margin-top:6px !important;
-    font-size:11px !important;
-    line-height:1.22 !important;
+    margin-top:16px !important;
+    font-size:14px !important;
+    line-height:1.28 !important;
 }
-.secom-template-table .col-part{width:13%;}
-.secom-template-table .col-desc{width:70%;}
-.secom-template-table .col-qty{width:9%;}
-.secom-template-table .col-unit{width:8%;}
+.secom-template-table .col-part{width:10%;}
+.secom-template-table .col-desc{width:68%;}
+.secom-template-table .col-qty{width:11%;}
+.secom-template-table .col-unit{width:11%;}
 .secom-template-table th{
-    background:#1f4f86 !important;
+    background:#244e85 !important;
     color:#ffffff !important;
-    padding:11px 12px !important;
+    padding:10px 12px !important;
     border:0 !important;
     font-weight:900 !important;
     text-align:center !important;
-    font-size:12px !important;
+    font-size:14px !important;
 }
 .secom-template-table td{
     border:0 !important;
-    padding:8px 12px !important;
+    padding:10px 12px !important;
     vertical-align:top !important;
     background:#ffffff !important;
     color:#6b7280 !important;
-    font-weight:800 !important;
-    white-space:normal !important;
+    font-weight:700 !important;
 }
 .secom-template-table .system-row td{
-    padding-top:8px !important;
+    padding-top:12px !important;
     padding-bottom:6px !important;
     color:#111827 !important;
     font-weight:900 !important;
 }
-.secom-template-table td:first-child{
-    text-align:center;
-}
+.secom-template-table td:first-child,
 .secom-template-table .num,
 .secom-template-table .unit{
     text-align:center;
 }
 .secom-template-finance{
     display:grid;
-    grid-template-columns:180px 188px 1fr 160px 170px;
-    gap:10px;
+    grid-template-columns:150px 190px 130px 190px 145px;
+    gap:14px;
     align-items:center;
-    margin-top:10px;
-    border-top:15px solid #1f4f86;
-    padding-top:12px;
+    margin-top:18px;
+    border-top:10px solid #244e85;
+    padding-top:16px;
 }
 .payment-title,
 .investment-title{
-    color:#1f4f86 !important;
+    color:#244e85 !important;
     font-size:20px;
-    line-height:1.25;
+    line-height:1.05;
     font-weight:900;
     text-align:right;
 }
 .payment-box,
 .investment-box{
-    border:1px solid #333;
+    border:1px solid #5b6471;
     background:#ffffff;
-    font-size:12px;
+    font-size:14px;
     font-weight:900;
 }
 .payment-box div,
@@ -3246,7 +3260,7 @@ body.theme-light select option{
     display:flex;
     justify-content:space-between;
     gap:10px;
-    padding:5px 8px;
+    padding:7px 9px;
     border-bottom:1px solid #cbd5e1;
 }
 .payment-box div:last-child,
@@ -3254,17 +3268,14 @@ body.theme-light select option{
     border-bottom:0;
 }
 .payment-box b,
-.investment-box b{
-    color:#6b7280 !important;
-}
 .payment-box span,
+.investment-box b,
 .investment-box span{
-    color:#6b7280 !important;
-    white-space:nowrap;
+    color:#4b5563 !important;
 }
 .payment-box .total,
 .investment-box .total{
-    background:#1f4f86 !important;
+    background:#244e85 !important;
 }
 .payment-box .total b,
 .payment-box .total span,
@@ -3273,45 +3284,46 @@ body.theme-light select option{
     color:#ffffff !important;
 }
 .roi-box{
-    grid-column:5;
-    border:1px solid #777;
+    border:1px solid #707070;
     text-align:center;
-    font-size:12px;
+    font-size:13px;
     font-weight:900;
-    align-self:end;
+    align-self:stretch;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
 }
 .roi-box b{
     display:block;
-    padding:7px 8px;
-    color:#1f4f86 !important;
-    line-height:1.2;
+    padding:8px 8px 6px;
+    color:#244e85 !important;
+    line-height:1.15;
 }
 .roi-box span{
     display:block;
-    background:#1f4f86;
+    background:#244e85;
     color:#ffffff !important;
-    padding:5px 8px;
+    padding:8px;
+    font-size:18px;
 }
 .secom-template-chart-wrap{
-    margin-top:8px;
-    position:relative;
+    margin-top:14px;
 }
 .secom-export-chart{
-    width:760px;
-    height:118px;
+    width:100%;
+    height:150px;
     display:block;
-    margin-left:48px;
 }
 .secom-export-chart .grid line{
     stroke:#111827;
     stroke-width:.75;
-    opacity:.65;
+    opacity:.6;
 }
 .secom-export-chart .grid text,
 .secom-export-chart .ticks text,
 .secom-export-chart .axis-title{
     fill:#111827;
-    font-size:9px;
+    font-size:10px;
     font-weight:700;
 }
 .secom-export-chart .axis{
@@ -3321,143 +3333,129 @@ body.theme-light select option{
 .secom-export-chart .saving{
     fill:none;
     stroke:#6a9f20;
-    stroke-width:2.1;
+    stroke-width:2.2;
 }
 .secom-export-chart .investment{
     fill:none;
     stroke:#2ca8df;
-    stroke-width:2.1;
+    stroke-width:2.2;
 }
 .chart-legend{
     text-align:center;
-    font-size:12px;
-    margin-top:0;
+    font-size:13px;
+    margin-top:6px;
+    color:#111827 !important;
 }
 .chart-legend span{
     display:inline-block;
-    width:20px;
-    height:2px;
+    width:22px;
+    height:3px;
     vertical-align:middle;
-    margin:0 1px 0 14px;
+    margin:0 3px 0 12px;
 }
 .chart-legend .green{background:#6a9f20;}
 .chart-legend .blue{background:#2ca8df;}
 .panel-warranty{
-    color:#1f4f86 !important;
+    color:#244e85 !important;
     text-align:center;
-    font-size:20px;
-    line-height:1.1;
+    font-size:18px;
+    line-height:1.15;
     font-weight:900;
     margin-top:2px;
 }
 .secom-template-install{
-    margin-top:7px;
-    font-size:11px;
-    line-height:1.08;
-    font-weight:800;
+    margin-top:12px;
+    font-size:13px;
+    line-height:1.2;
+    font-weight:700;
 }
 .secom-template-install .bar{
     display:grid;
-    grid-template-columns:1fr 340px;
+    grid-template-columns:1fr 255px;
     background:#7b7b7b;
     color:#ffffff !important;
-    min-height:16px;
+    min-height:18px;
     align-items:center;
-    padding:2px 5px;
+    padding:3px 8px;
 }
 .secom-template-install .bar b,
 .secom-template-install .bar span{
     color:#ffffff !important;
 }
-.secom-template-install .bar span{
+.secom-template-install .bar span,
+.secom-template-install .row span{
     text-align:center;
 }
 .secom-template-install .row{
     display:grid;
-    grid-template-columns:1fr 340px;
-    min-height:16px;
-    padding:1px 5px;
+    grid-template-columns:1fr 255px;
+    min-height:18px;
+    padding:3px 8px;
     color:#6b7280 !important;
 }
-.secom-template-install .row span{
-    text-align:center;
-}
 .secom-template-notes{
-    margin-top:6px;
-    font-size:11.5px;
-    line-height:1.14;
-    font-weight:800;
+    margin-top:10px;
+    font-size:12.5px;
+    line-height:1.28;
+    font-weight:700;
 }
 .secom-template-notes p{
-    margin:2px 0;
+    margin:4px 0;
     color:#111827 !important;
 }
 .secom-template-notes .tax{
-    margin-top:5px;
-    font-size:11px;
+    margin-top:8px;
+    font-size:12px;
     font-weight:900;
     text-transform:uppercase;
 }
 .secom-template-footer{
     position:relative;
-    margin-top:16px;
+    margin-top:18px;
+    min-height:180px;
     border-bottom:1px solid #111;
-    padding-bottom:22px;
-    min-height:145px;
+    padding-bottom:24px;
+}
+.signature{
+    width:390px;
+    margin:0 auto;
+    text-align:center;
+    font-size:13px;
+    font-weight:900;
+    padding-top:72px;
+}
+.signature div{
+    margin-bottom:10px;
+}
+.signature span{
+    display:block;
+    border-top:1px solid #111;
+    margin-bottom:6px;
+}
+.signature small{
+    display:block;
+    font-size:12px;
+    font-weight:900;
+}
+.cert-badge{
+    position:absolute;
+    right:16px;
+    bottom:26px;
+    width:160px;
+    text-align:center;
+}
+.cert-badge img{
+    width:100%;
+    height:auto;
+    display:block;
 }
 .footer-address{
     position:absolute;
     left:0;
     bottom:0;
     width:100%;
-    color:#1f4f86 !important;
-    text-align:center;
-    font-size:11px;
-    font-weight:900;
-}
-.signature{
-    width:360px;
-    margin:0 auto;
+    color:#244e85 !important;
     text-align:center;
     font-size:12px;
-    font-weight:900;
-    padding-top:48px;
-}
-.signature div{
-    margin-bottom:9px;
-}
-.signature span{
-    display:block;
-    border-top:1px solid #111;
-    margin-bottom:5px;
-}
-.signature small{
-    display:block;
-    font-size:11px;
-    font-weight:900;
-}
-.cert-badge{
-    position:absolute;
-    right:60px;
-    top:10px;
-    width:112px;
-    height:112px;
-    border:3px solid #1f4f86;
-    border-radius:50%;
-    text-align:center;
-    padding-top:25px;
-    transform:rotate(-10deg);
-    opacity:.85;
-}
-.cert-badge b{
-    color:#1f4f86 !important;
-    font-size:14px;
-    line-height:1.02;
-}
-.cert-badge span{
-    display:block;
-    margin-top:4px;
-    color:#1f4f86 !important;
-    font-size:8px;
     font-weight:900;
 }
