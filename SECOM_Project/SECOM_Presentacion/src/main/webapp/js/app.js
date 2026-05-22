@@ -1,7 +1,7 @@
 import { $, $$, debounce, formatCurrencyMXN, formatDate, formatDateTime, formatNumber, openModal, closeModal, setPillStatus, toast } from './utils.js';
 import { analyzeReceiptFile, createEmptyReceiptData } from './receiptParser.js';
 import { computeQuote, buildExportHtml } from './quoteEngine.js';
-import { getQuotes, getProjects, getInsumos, getPaquetes, getCotizacionesReport, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject } from './storage.js';
+import { getQuotes, getProjects, getInsumos, getPaquetes, getCotizacionesReport, resetAllData, saveInsumo, savePaquete, saveProjectFromQuote, saveProject, saveQuote, updateInsumo, updatePaquete, updateProject, updateQuote, removeInsumo, removePaquete, removeProject, removeQuote } from './storage.js';
 import { INSUMO_CATALOG, PACKAGE_PRESETS, buildPackageItems, getPackageSummaryLabel, setInsumoCatalog, setPackageCatalog } from './catalogData.js';
 import { applyTheme, getDefaultQuoteParams, loadUserPreferences, saveUserPreferences } from './preferences.js';
 
@@ -2122,6 +2122,7 @@ function renderHistorialTable() {
             <button class="btn" data-action="edit" data-id="${q.id}"><i data-lucide="pencil"></i>Editar</button>
             <button class="btn" data-action="export" data-id="${q.id}"><i data-lucide="download"></i>PDF</button>
             <button class="btn btn--success" data-action="confirm" data-id="${q.id}"><i data-lucide="check"></i>Proyecto</button>
+            <button class="btn btn--danger" data-action="delete" data-id="${q.id}"><i data-lucide="trash-2"></i>Eliminar</button>
           </div>
         </td>
       </tr>
@@ -2153,6 +2154,18 @@ function renderHistorialTable() {
                 renderHistorialTable();
                 renderProyectosTable();
                 setRoute('proyectos');
+            } else if (action === 'delete') {
+                const cliente = q.client?.nombre || q.receipt?.nombre || q.id;
+                const ok = window.confirm(`¿Eliminar la cotización de ${cliente}? Esta acción quitará la cotización de la lista.`);
+                if (!ok) return;
+
+                try {
+                    removeQuote(q.id);
+                    toast({title: 'Cotización eliminada', message: 'La cotización se eliminó correctamente.', icon: 'trash-2'});
+                    renderHistorialTable();
+                } catch (err) {
+                    toast({title: 'No se pudo eliminar', message: err?.message || 'Ocurrió un error al eliminar la cotización.', icon: 'alert-triangle'});
+                }
             }
         });
     });
@@ -5751,6 +5764,56 @@ function secomV3EnsureProductState() {
     state.receipt.precioPanelInstalado = Number.isFinite(Number(state.receipt.precioPanelInstalado))
         ? Number(state.receipt.precioPanelInstalado)
         : 10000;
+
+    if (typeof state.receipt.usarPrecioGlobalPanel !== 'boolean') {
+        state.receipt.usarPrecioGlobalPanel = true;
+    }
+}
+
+function secomV3UseGlobalPanelPrice() {
+    secomV3EnsureProductState();
+    return state.receipt.usarPrecioGlobalPanel !== false;
+}
+
+function secomV3FindCatalogProductForItem(item = {}) {
+    const catalogId = item.catalogId != null ? String(item.catalogId) : '';
+    const codigo = item.codigo != null ? String(item.codigo) : '';
+
+    return secomV3GetCatalogProducts().find(product => {
+        return (catalogId && String(product.id) === catalogId)
+            || (codigo && String(product.codigo) === codigo);
+    }) || null;
+}
+
+function secomV3ResolvePanelPrice(item = {}) {
+    if (secomV3UseGlobalPanelPrice()) {
+        return Number(state.receipt.precioPanelInstalado || 10000);
+    }
+
+    const catalogProduct = secomV3FindCatalogProductForItem(item);
+    const catalogPrice = Number(catalogProduct?.precio || 0);
+
+    if (Number.isFinite(catalogPrice) && catalogPrice > 0) {
+        return catalogPrice;
+    }
+
+    const currentPrice = Number(item.precio || 0);
+    return Number.isFinite(currentPrice) ? Math.max(0, currentPrice) : 0;
+}
+
+function secomV3SyncPanelPrices() {
+    secomV3EnsureProductState();
+
+    state.receipt.insumos = state.receipt.insumos.map(item => {
+        if (!secomV3IsPanelItem(item)) {
+            return item;
+        }
+
+        return {
+            ...item,
+            precio: secomV3ResolvePanelPrice(item)
+        };
+    });
 }
 
 function secomV3NormalizeCategory(value = '') {
@@ -5967,8 +6030,8 @@ function secomV3RenderProductCard(product) {
                 }
 
                 <span>
-                    ${isPanel
-                        ? 'Precio por panel global'
+                    ${isPanel && secomV3UseGlobalPanelPrice()
+                        ? `Global: ${formatCurrencyMXN(state.receipt.precioPanelInstalado || 10000)}`
                         : formatCurrencyMXN(product.precio || 0)
                     }
                 </span>
@@ -6183,8 +6246,17 @@ function secomV2RenderPackageLeft() {
                     </div>
 
                     <div class="help">
-                        Este precio se aplicará a todos los paneles agregados a esta cotización.
+                        Si lo desactivas, cada panel usará el precio real registrado en el catálogo de insumos.
                     </div>
+
+                    <label class="check-row" style="margin-top:10px; display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input
+                            id="usarPrecioGlobalPanel"
+                            type="checkbox"
+                            ${secomV3UseGlobalPanelPrice() ? 'checked' : ''}
+                        />
+                        <span>Usar precio global</span>
+                    </label>
                 </div>
 
                 <div class="field secom-commercial-card__input">
@@ -6195,6 +6267,7 @@ function secomV2RenderPackageLeft() {
                         min="0"
                         step="100"
                         value="${escapeAttr(String(state.receipt.precioPanelInstalado || 10000))}"
+                        ${secomV3UseGlobalPanelPrice() ? '' : 'disabled'}
                     />
                 </div>
             </div>
@@ -6421,20 +6494,20 @@ function secomV2WirePackage() {
         secomV3ApplyShadowPercent(e.target.value);
     }, 120));
 
+    $('#usarPrecioGlobalPanel')?.addEventListener('change', () => {
+        state.receipt.usarPrecioGlobalPanel = Boolean($('#usarPrecioGlobalPanel')?.checked);
+        secomV3SyncPanelPrices();
+        state.quote = secomV3CurrentQuote();
+        renderWizard();
+    });
+
     $('#precioPanelInstalado')?.addEventListener('input', debounce(() => {
         const precio = secomV2Number($('#precioPanelInstalado')?.value, 10000);
         state.receipt.precioPanelInstalado = Math.max(0, precio);
 
-        state.receipt.insumos = state.receipt.insumos.map(item => {
-            if (secomV3IsPanelItem(item)) {
-                return {
-                    ...item,
-                    precio: state.receipt.precioPanelInstalado
-                };
-            }
-
-            return item;
-        });
+        if (secomV3UseGlobalPanelPrice()) {
+            secomV3SyncPanelPrices();
+        }
 
         state.quote = secomV3CurrentQuote();
         renderWizard();
@@ -6463,7 +6536,7 @@ function secomV2WirePackage() {
 
             const isPanel = product.categoria === 'paneles';
             const precioFinal = isPanel
-                ? Number(state.receipt.precioPanelInstalado || 10000)
+                ? secomV3ResolvePanelPrice(product)
                 : Number(product.precio || 0);
 
             const existingIndex = state.receipt.insumos.findIndex(item => String(item.codigo) === String(product.codigo));

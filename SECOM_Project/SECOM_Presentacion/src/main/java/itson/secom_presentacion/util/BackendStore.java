@@ -274,6 +274,7 @@ public final class BackendStore {
             Connection conn = db.getConexion();
             ensureInsumosSchema(conn);
             seedDefaultInsumos(conn);
+            applyDefaultInsumoPriceRevision(conn);
 
             String sql = """
                 SELECT id, codigo, descripcion, categoria, unidad,
@@ -456,6 +457,7 @@ public final class BackendStore {
             Connection conn = db.getConexion();
             ensureInsumosSchema(conn);
             seedDefaultInsumos(conn);
+            applyDefaultInsumoPriceRevision(conn);
             ensurePaquetesSchema(conn);
             seedDefaultPaquetes(conn);
 
@@ -490,6 +492,7 @@ public final class BackendStore {
             conn.setAutoCommit(false);
             ensureInsumosSchema(conn);
             seedDefaultInsumos(conn);
+            applyDefaultInsumoPriceRevision(conn);
             ensurePaquetesSchema(conn);
 
             String sql = """
@@ -548,6 +551,7 @@ public final class BackendStore {
             conn.setAutoCommit(false);
             ensureInsumosSchema(conn);
             seedDefaultInsumos(conn);
+            applyDefaultInsumoPriceRevision(conn);
             ensurePaquetesSchema(conn);
             if (!existsPaquete(conn, id)) {
                 throw new IllegalStateException("No se encontró el paquete indicado.");
@@ -917,21 +921,59 @@ public final class BackendStore {
             }
         }
 
-        insertDefaultInsumo(conn, "PANEL-550", "Panel solar monocristalino 550 W (paneles)", "Paneles", "PZA", 3200, 0.16);
-        insertDefaultInsumo(conn, "PANEL-610", "Panel solar monocristalino 610 W (paneles premium)", "Paneles", "PZA", 3950, 0.16);
-        insertDefaultInsumo(conn, "INV-STR", "Inversor interconectado string (inversor)", "Inversores", "PZA", 18500, 0.16);
-        insertDefaultInsumo(conn, "INV-HIB", "Inversor híbrido con monitoreo (inversor)", "Inversores", "PZA", 36500, 0.16);
-        insertDefaultInsumo(conn, "EST-AL", "Estructura de aluminio para azotea o techo (estructura)", "Estructura", "SERV", 9800, 0.16);
-        insertDefaultInsumo(conn, "EST-LA", "Estructura reforzada para lámina o teja (estructura)", "Estructura", "SERV", 14500, 0.16);
-        insertDefaultInsumo(conn, "CAB-FV", "Cable fotovoltaico y conectores MC4 (cableado)", "Cableado", "SERV", 4200, 0.16);
-        insertDefaultInsumo(conn, "PROT-CC", "Protecciones CC/CA y tablero de interconexión (protecciones)", "Protecciones", "SERV", 7600, 0.16);
-        insertDefaultInsumo(conn, "MON-APP", "Monitoreo remoto y puesta en marcha (monitoreo)", "Monitoreo", "SERV", 3900, 0.16);
-        insertDefaultInsumo(conn, "TIERRA", "Puesta a tierra y canalización (seguridad)", "Seguridad", "SERV", 5600, 0.16);
-        insertDefaultInsumo(conn, "TRAM-CFE", "Trámite de interconexión ante CFE (trámite)", "Trámite", "SERV", 4800, 0.16);
-        insertDefaultInsumo(conn, "MO-INST", "Mano de obra de instalación (instalación)", "Instalación", "SERV", 12600, 0.16);
-        insertDefaultInsumo(conn, "FLETE", "Flete, maniobras y logística (logística)", "Logística", "SERV", 3400, 0.16);
-        insertDefaultInsumo(conn, "BAT-LFP", "Banco de baterías LiFePO4 de respaldo (baterías)", "Baterías", "PZA", 48500, 0.16);
-        insertDefaultInsumo(conn, "ING", "Ingeniería, planos y memoria técnica (ingeniería)", "Ingeniería", "SERV", 5200, 0.16);
+        insertDefaultInsumo(conn, "PANEL-550", "Panel solar monocristalino 550 W (paneles)", "Paneles", "PZA", 2650, 0.16);
+        insertDefaultInsumo(conn, "PANEL-610", "Panel solar monocristalino 610 W (paneles premium)", "Paneles", "PZA", 3150, 0.16);
+        insertDefaultInsumo(conn, "INV-STR", "Inversor interconectado string (inversor)", "Inversores", "PZA", 15800, 0.16);
+        insertDefaultInsumo(conn, "INV-HIB", "Inversor híbrido con monitoreo (inversor)", "Inversores", "PZA", 29900, 0.16);
+        insertDefaultInsumo(conn, "EST-AL", "Estructura de aluminio para azotea o techo (estructura)", "Estructura", "SERV", 7600, 0.16);
+        insertDefaultInsumo(conn, "EST-LA", "Estructura reforzada para lámina o teja (estructura)", "Estructura", "SERV", 10800, 0.16);
+        insertDefaultInsumo(conn, "CAB-FV", "Cable fotovoltaico y conectores MC4 (cableado)", "Cableado", "SERV", 3200, 0.16);
+        insertDefaultInsumo(conn, "PROT-CC", "Protecciones CC/CA y tablero de interconexión (protecciones)", "Protecciones", "SERV", 5900, 0.16);
+        insertDefaultInsumo(conn, "MON-APP", "Monitoreo remoto y puesta en marcha (monitoreo)", "Monitoreo", "SERV", 2500, 0.16);
+        insertDefaultInsumo(conn, "TIERRA", "Puesta a tierra y canalización (seguridad)", "Seguridad", "SERV", 3900, 0.16);
+        insertDefaultInsumo(conn, "TRAM-CFE", "Trámite de interconexión ante CFE (trámite)", "Trámite", "SERV", 3600, 0.16);
+        insertDefaultInsumo(conn, "MO-INST", "Mano de obra de instalación (instalación)", "Instalación", "SERV", 9800, 0.16);
+        insertDefaultInsumo(conn, "FLETE", "Flete, maniobras y logística (logística)", "Logística", "SERV", 2600, 0.16);
+        insertDefaultInsumo(conn, "BAT-LFP", "Banco de baterías LiFePO4 de respaldo (baterías)", "Baterías", "PZA", 38900, 0.16);
+        insertDefaultInsumo(conn, "ING", "Ingeniería, planos y memoria técnica (ingeniería)", "Ingeniería", "SERV", 3800, 0.16);
+    }
+
+    private static void applyDefaultInsumoPriceRevision(Connection conn) throws Exception {
+        // Actualiza únicamente la carga inicial del catálogo SECOM si conserva
+        // los precios anteriores. No sobreescribe insumos creados o editados manualmente.
+        updateDefaultInsumoPrice(conn, "PANEL-550", 3200, 2650);
+        updateDefaultInsumoPrice(conn, "PANEL-610", 3950, 3150);
+        updateDefaultInsumoPrice(conn, "INV-STR", 18500, 15800);
+        updateDefaultInsumoPrice(conn, "INV-HIB", 36500, 29900);
+        updateDefaultInsumoPrice(conn, "EST-AL", 9800, 7600);
+        updateDefaultInsumoPrice(conn, "EST-LA", 14500, 10800);
+        updateDefaultInsumoPrice(conn, "CAB-FV", 4200, 3200);
+        updateDefaultInsumoPrice(conn, "PROT-CC", 7600, 5900);
+        updateDefaultInsumoPrice(conn, "MON-APP", 3900, 2500);
+        updateDefaultInsumoPrice(conn, "TIERRA", 5600, 3900);
+        updateDefaultInsumoPrice(conn, "TRAM-CFE", 4800, 3600);
+        updateDefaultInsumoPrice(conn, "MO-INST", 12600, 9800);
+        updateDefaultInsumoPrice(conn, "FLETE", 3400, 2600);
+        updateDefaultInsumoPrice(conn, "BAT-LFP", 48500, 38900);
+        updateDefaultInsumoPrice(conn, "ING", 5200, 3800);
+    }
+
+    private static void updateDefaultInsumoPrice(Connection conn, String codigo, double oldPrice, double newPrice) throws Exception {
+        String sql = """
+            UPDATE insumos_catalogo
+            SET precio_unitario = ?, updated_at = NOW()
+            WHERE codigo = ?
+              AND deleted_at IS NULL
+              AND observaciones = 'Carga inicial del catálogo SECOM'
+              AND ABS(precio_unitario - ?) < 0.01
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setDouble(1, newPrice);
+            ps.setString(2, codigo);
+            ps.setDouble(3, oldPrice);
+            ps.executeUpdate();
+        }
     }
 
     private static void insertDefaultInsumo(Connection conn, String codigo, String descripcion,

@@ -36,6 +36,24 @@ const LS = {
   counters: 'secom_fallback_counters_v3',
 };
 
+const DEFAULT_PRICE_REVISIONS = {
+  'PANEL-550': {old: 3200, next: 2650},
+  'PANEL-610': {old: 3950, next: 3150},
+  'INV-STR': {old: 18500, next: 15800},
+  'INV-HIB': {old: 36500, next: 29900},
+  'EST-AL': {old: 9800, next: 7600},
+  'EST-LA': {old: 14500, next: 10800},
+  'CAB-FV': {old: 4200, next: 3200},
+  'PROT-CC': {old: 7600, next: 5900},
+  'MON-APP': {old: 3900, next: 2500},
+  'TIERRA': {old: 5600, next: 3900},
+  'TRAM-CFE': {old: 4800, next: 3600},
+  'MO-INST': {old: 12600, next: 9800},
+  'FLETE': {old: 3400, next: 2600},
+  'BAT-LFP': {old: 48500, next: 38900},
+  'ING': {old: 5200, next: 3800},
+};
+
 function readLocal(key, fallback){
   try{
     const raw = localStorage.getItem(key);
@@ -68,7 +86,7 @@ function todayIso(){
 
 function seedInsumos(){
   const current = readLocal(LS.insumos, null);
-  if (Array.isArray(current) && current.length) return current;
+  if (Array.isArray(current) && current.length) return applyDefaultPriceRevisionLocal(current);
   const seeded = DEFAULT_INSUMO_CATALOG.map((it, idx) => ({
     id: idx + 1,
     ...structuredCloneSafe(it),
@@ -77,6 +95,28 @@ function seedInsumos(){
     updatedAt: todayIso(),
   }));
   return writeLocal(LS.insumos, seeded);
+}
+
+function applyDefaultPriceRevisionLocal(items){
+  let changed = false;
+  const next = (Array.isArray(items) ? items : []).map(item => {
+    const code = String(item?.codigo || '').trim().toUpperCase();
+    const revision = DEFAULT_PRICE_REVISIONS[code];
+    if (!revision) return item;
+
+    const currentPrice = Number(item?.precio ?? item?.precioUnitario ?? 0);
+    if (Math.abs(currentPrice - revision.old) >= 0.01) return item;
+
+    changed = true;
+    return {
+      ...item,
+      precio: revision.next,
+      precioUnitario: revision.next,
+      updatedAt: todayIso(),
+    };
+  });
+
+  return changed ? writeLocal(LS.insumos, next) : items;
 }
 
 function seedPaquetes(){
