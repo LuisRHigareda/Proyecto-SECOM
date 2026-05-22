@@ -1848,6 +1848,21 @@ function persistQuote(status) {
 }
 
 
+function addCanvasFitToPage(pdf, canvas, options = {}) {
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = Number(options.margin ?? 18);
+    const usableW = pageW - margin * 2;
+    const usableH = pageH - margin * 2;
+    const ratio = Math.min(usableW / canvas.width, usableH / canvas.height);
+    const imgW = canvas.width * ratio;
+    const imgH = canvas.height * ratio;
+    const x = (pageW - imgW) / 2;
+    const y = (pageH - imgH) / 2;
+    const imgData = canvas.toDataURL('image/png');
+    pdf.addImage(imgData, 'PNG', x, y, imgW, imgH, undefined, 'FAST');
+}
+
 function addCanvasToPdfByPages(pdf, canvas, options = {}) {
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
@@ -1891,11 +1906,9 @@ async function exportPdf() {
     setPillStatus('Generando PDF…', 'busy');
 
     try {
-        // Ensure we have an id
-        if (!state.savedQuote?.id) {
-            // Save silently to keep consistent naming
-            state.savedQuote = persistQuote('Guardada');
-        }
+        // El PDF no debe depender de la base de datos. Si la cotización aún no se ha guardado,
+        // se usa un folio temporal únicamente para el nombre del archivo y la vista previa.
+        const exportFolio = state.savedQuote?.id || `TEMP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Date.now().toString().slice(-4)}`;
 
         const area = $('#exportDoc');
         if (!area)
@@ -1907,14 +1920,23 @@ async function exportPdf() {
         // Pequeña espera para asegurar que el canvas tenga contenido
         await new Promise(r => setTimeout(r, 60));
 
-        const canvas = await window.html2canvas(area, {scale: 3, useCORS: true, backgroundColor: '#ffffff', windowWidth: area.scrollWidth});
+        const canvas = await window.html2canvas(area, {
+            scale: 3,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            windowWidth: area.scrollWidth,
+            windowHeight: area.scrollHeight,
+            scrollX: 0,
+            scrollY: 0,
+            imageTimeout: 15000
+        });
 
         const {jsPDF} = window.jspdf;
-        const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'a4'});
-        addCanvasToPdfByPages(pdf, canvas, {margin: 24});
+        const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'letter'});
+        addCanvasFitToPage(pdf, canvas, {margin: 0});
 
         const name = (state.client.nombre || 'Cliente').trim().replace(/\s+/g, '_').slice(0, 36);
-        const filename = `Cotizacion_SECOM_${name}_${state.savedQuote.id}.pdf`;
+        const filename = `Cotizacion_SECOM_${name}_${exportFolio}.pdf`;
         pdf.save(filename);
 
         toast({title: 'PDF generado', message: 'Descarga iniciada.', icon: 'download'});
@@ -2341,11 +2363,20 @@ async function exportPdfFromStoredQuote(q) {
 
         await new Promise(r => setTimeout(r, 60));
 
-        const canvas = await window.html2canvas(area, {scale: 3, useCORS: true, backgroundColor: '#ffffff', windowWidth: area.scrollWidth});
+        const canvas = await window.html2canvas(area, {
+            scale: 3,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            windowWidth: area.scrollWidth,
+            windowHeight: area.scrollHeight,
+            scrollX: 0,
+            scrollY: 0,
+            imageTimeout: 15000
+        });
 
         const {jsPDF} = window.jspdf;
-        const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'a4'});
-        addCanvasToPdfByPages(pdf, canvas, {margin: 24});
+        const pdf = new jsPDF({orientation: 'p', unit: 'pt', format: 'letter'});
+        addCanvasFitToPage(pdf, canvas, {margin: 0});
         const name = (q.client?.nombre || 'Cliente').trim().replace(/\s+/g, '_').slice(0, 36);
         pdf.save(`Cotizacion_SECOM_${name}_${q.id}.pdf`);
 
@@ -4757,24 +4788,70 @@ function secomV2GetConsumptionMetrics() {
     const r = state.receipt || createEmptyReceiptData(state.selectedTariff);
     const historial = Array.isArray(r?.historial) ? r.historial : [];
 
-    const consumos = historial
-        .map(h => Number(h?.kwh || 0))
-        .filter(n => Number.isFinite(n) && n > 0);
+    const periodoEsBimestral = (periodo = '') => {
+        const m = String(periodo || '').toUpperCase().match(/(?:DEL\s+)?(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s+(\d{2})\s+(?:AL\s+)?(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s+(\d{2})/);
+        if (!m) return false;
+        const months = {ENE:0,FEB:1,MAR:2,ABR:3,MAY:4,JUN:5,JUL:6,AGO:7,SEP:8,OCT:9,NOV:10,DIC:11};
+        const a = new Date(2000 + Number(m[3]), months[m[2]] ?? 0, Number(m[1]));
+        const b = new Date(2000 + Number(m[6]), months[m[5]] ?? 0, Number(m[4]));
+        const days = Math.round((b - a) / 86400000);
+        return Number.isFinite(days) && days >= 45;
+    };
 
-    const pagos = historial
-        .map(h => Number(h?.pago || 0))
-        .filter(n => Number.isFinite(n) && n > 0);
+    const currentIsBimestral = r?.tipoPeriodo === 'Bimestral' || Number(r?.periodo?.days || 0) >= 45;
+    const currentKwh = Number(r?.consumoPeriodo || 0);
+    const currentPay = Number(r?.totalAPagar || 0);
 
-    const totalKwh = consumos.reduce((a, b) => a + b, 0);
-    const totalPagos = pagos.reduce((a, b) => a + b, 0);
+    const consumosMensuales = [];
+    const pagosMensuales = [];
+    const consumosPeriodo = [];
+    const pagosPeriodo = [];
+
+    if (currentKwh > 0) {
+        consumosPeriodo.push(currentKwh);
+        consumosMensuales.push(currentIsBimestral ? currentKwh / 2 : currentKwh);
+    }
+    if (currentPay > 0) {
+        pagosPeriodo.push(currentPay);
+        pagosMensuales.push(currentIsBimestral ? currentPay / 2 : currentPay);
+    }
+
+    historial.forEach(h => {
+        const kwh = Number(h?.kwh || 0);
+        const pago = Number(h?.pago || h?.importe || 0);
+        const bimestral = periodoEsBimestral(h?.periodo || h?.periodoRaw || '');
+        if (kwh > 0) {
+            consumosPeriodo.push(kwh);
+            consumosMensuales.push(bimestral ? kwh / 2 : kwh);
+        }
+        if (pago > 0) {
+            pagosPeriodo.push(pago);
+            pagosMensuales.push(bimestral ? pago / 2 : pago);
+        }
+    });
+
+    const sum = arr => arr.reduce((a, b) => a + b, 0);
+    const avg = arr => arr.length ? sum(arr) / arr.length : 0;
+
+    const promedioMensual = consumosMensuales.length
+        ? avg(consumosMensuales)
+        : (Number(r?.consumoPromedioMensual || 0) || (currentIsBimestral ? currentKwh / 2 : currentKwh));
+
+    const promedioCostoMensual = pagosMensuales.length
+        ? avg(pagosMensuales)
+        : (Number(r?.pagoPromedioMensual || 0) || (currentIsBimestral ? currentPay / 2 : currentPay));
+
+    const totalPagos = pagosPeriodo.length
+        ? sum(pagosPeriodo)
+        : Number(r?.totalPagoHistorico || r?.totalPagosHistorico || 0);
 
     return {
-        promedioMensual: consumos.length ? totalKwh / consumos.length : Number(r?.consumoPeriodo || 0),
-        promedioDiarioWatts: consumos.length ? ((totalKwh / consumos.length) * 1000) / 30 : 0,
-        promedioCostoMensual: pagos.length ? totalPagos / pagos.length : Number(r?.totalAPagar || 0),
-        consumoMasAlto: consumos.length ? Math.max(...consumos) : Number(r?.consumoPeriodo || 0),
+        promedioMensual,
+        promedioDiarioWatts: promedioMensual ? (promedioMensual * 1000) / 30 : 0,
+        promedioCostoMensual,
+        consumoMasAlto: consumosPeriodo.length ? Math.max(...consumosPeriodo) : Number(r?.consumoMaximoHistorico || 0),
         totalPagos,
-        tipoPeriodo: r?.tipoPeriodo || 'Mensual'
+        tipoPeriodo: r?.tipoPeriodo || (currentIsBimestral ? 'Bimestral' : 'Mensual')
     };
 }
 function secomV2RenderConsumptionLeft() {
@@ -5692,6 +5769,7 @@ function secomV3GetProductIcon(category) {
         inversores: 'cpu',
         montaje: 'wrench',
         proteccion: 'shield-check',
+        sombras: 'cloud-sun',
         paquetes: 'boxes',
         otros: 'package'
     };
@@ -5705,6 +5783,7 @@ function secomV3GetCategoryLabel(category) {
         inversores: 'Inversores',
         montaje: 'Montaje',
         proteccion: 'Protección',
+        sombras: 'Sombras',
         paquetes: 'Paquetes completos',
         otros: 'Otros'
     };
@@ -5895,6 +5974,54 @@ function secomV3RenderProductCard(product) {
 }
 
 
+function secomV3RenderShadowControls() {
+    secomV3EnsureProductState();
+    const pct = Number(state.quoteMeta?.perdidasSombraPct || state.receipt?.instalacion?.perdidasSombraPct || 0);
+    const pctInt = Math.round(pct * 100);
+    const options = [0, 5, 10, 15, 20, 25, 30];
+    return `
+        <div class="secom-shadow-panel">
+            <div class="row" style="align-items:flex-start; gap:14px">
+                <div class="secom-product-card__icon"><i data-lucide="cloud-sun"></i></div>
+                <div style="flex:1; min-width:0">
+                    <div class="card__title">Pérdidas por sombras</div>
+                    <div class="help">Define el porcentaje estimado de sombras u obstrucciones. Este valor reduce la producción efectiva del sistema y ajusta cobertura, ahorro y retorno.</div>
+                </div>
+                <div class="badge">Actual: ${pctInt}%</div>
+            </div>
+
+            <div class="secom-shadow-options">
+                ${options.map(value => `
+                    <button type="button" class="secom-shadow-option ${value === pctInt ? 'is-active' : ''}" data-shadow-pct="${value}">
+                        <span>${value === 0 ? 'Sin sombras' : value <= 10 ? 'Baja' : value <= 20 ? 'Media' : 'Alta'}</span>
+                        <b>${value}%</b>
+                    </button>
+                `).join('')}
+            </div>
+
+            <div class="secom-shadow-range">
+                <label>Porcentaje personalizado</label>
+                <input id="shadowPctRange" type="range" min="0" max="60" step="1" value="${pctInt}" />
+                <div class="help">Valor recomendado: 0% si no existen sombras relevantes. Usar 10%-20% para sombras parciales y mayor valor si hay obstrucciones significativas.</div>
+            </div>
+        </div>
+    `;
+}
+
+function secomV3ApplyShadowPercent(value) {
+    const pct = Math.max(0, Math.min(60, Number(value || 0))) / 100;
+    state.quoteMeta.perdidasSombraPct = pct;
+    state.quoteMeta.sombras = pct <= 0 ? 'Sin sombras' : `Sombras estimadas ${Math.round(pct * 100)}%`;
+    if (!state.receipt) state.receipt = createEmptyReceiptData(state.selectedTariff);
+    state.receipt.instalacion = {
+        ...(state.receipt.instalacion || {}),
+        perdidasSombraPct: pct,
+        sombras: state.quoteMeta.sombras,
+    };
+    state.quote = secomV3CurrentQuote();
+    renderWizard();
+}
+
 function secomV3GetPackageCards() {
     loadInsumoCatalogSafe(true);
     loadPackageCatalogSafe(true);
@@ -5987,10 +6114,11 @@ function secomV3RenderSelectedProduct(item, index) {
 function secomV2RenderPackageLeft() {
     secomV3EnsureProductState();
 
-    const categories = ['paneles', 'inversores', 'montaje', 'proteccion', 'paquetes', 'otros'];
+    const categories = ['paneles', 'inversores', 'montaje', 'proteccion', 'sombras', 'paquetes', 'otros'];
     const activeCategory = state.productCatalog?.activeCategory || 'paneles';
-    const products = activeCategory === 'paquetes' ? [] : secomV3GetProductsByCategory(activeCategory);
+    const products = activeCategory === 'paquetes' || activeCategory === 'sombras' ? [] : (activeCategory === 'otros' ? secomV3GetCatalogProducts() : secomV3GetProductsByCategory(activeCategory));
     const packageCards = activeCategory === 'paquetes' ? secomV3GetPackageCards() : [];
+    const shadowControls = activeCategory === 'sombras' ? secomV3RenderShadowControls() : '';
     const selected = state.receipt.insumos || [];
     const totals = secomV3ComputeTotals();
     const q = secomV3CurrentQuote();
@@ -6025,11 +6153,13 @@ function secomV2RenderPackageLeft() {
             </div>
 
             <div class="secom-product-catalog secom-product-catalog--wide">
-                ${activeCategory === 'paquetes'
-                    ? (packageCards.length ? packageCards.join('') : `<div class="review-alert" style="width:100%">No hay paquetes activos registrados.</div>`)
-                    : (products.length
-                        ? products.map(secomV3RenderProductCard).join('')
-                        : `<div class="review-alert" style="width:100%">No hay productos registrados en esta categoría.</div>`)
+                ${activeCategory === 'sombras'
+                    ? shadowControls
+                    : activeCategory === 'paquetes'
+                        ? (packageCards.length ? packageCards.join('') : `<div class="review-alert" style="width:100%">No hay paquetes activos registrados.</div>`)
+                        : (products.length
+                            ? products.map(secomV3RenderProductCard).join('')
+                            : `<div class="review-alert" style="width:100%">No hay productos registrados en esta categoría.</div>`)
                 }
             </div>
 
@@ -6273,6 +6403,14 @@ function secomV2WirePackage() {
             renderWizard();
         });
     });
+
+    $$('#route-cotizador [data-shadow-pct]').forEach(btn => {
+        btn.addEventListener('click', () => secomV3ApplyShadowPercent(btn.dataset.shadowPct));
+    });
+
+    $('#shadowPctRange')?.addEventListener('input', debounce((e) => {
+        secomV3ApplyShadowPercent(e.target.value);
+    }, 120));
 
     $('#precioPanelInstalado')?.addEventListener('input', debounce(() => {
         const precio = secomV2Number($('#precioPanelInstalado')?.value, 10000);

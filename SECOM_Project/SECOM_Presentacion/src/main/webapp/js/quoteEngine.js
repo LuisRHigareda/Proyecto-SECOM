@@ -12,11 +12,13 @@ export function computeQuote(receipt, client, params, overrides) {
     const o = overrides || {};
     const consumoPeriodoReal = Number(receipt?.consumoPeriodo || 0);
     const totalReciboReal = Number(receipt?.totalAPagar || 0);
+    const consumoPromedioReciboReal = Number(receipt?.consumoPromedioMensual || 0);
+    const pagoPromedioReciboReal = Number(receipt?.pagoPromedioMensual || 0);
     const historialReal = Array.isArray(receipt?.historial)
             ? receipt.historial.some(x => Number(x?.kwh || 0) > 0 || Number(x?.pago || 0) > 0)
             : false;
 
-    if (consumoPeriodoReal <= 0 || (totalReciboReal <= 0 && !historialReal)) {
+    if ((consumoPeriodoReal <= 0 && consumoPromedioReciboReal <= 0) || (totalReciboReal <= 0 && pagoPromedioReciboReal <= 0 && !historialReal)) {
         return {
             client: client || {},
             receipt: receipt || {},
@@ -49,7 +51,8 @@ export function computeQuote(receipt, client, params, overrides) {
     const periodoDays = Number(receipt?.periodo?.days || 0);
     const isBimestral = periodoDays >= 45 || receipt?.tipoPeriodo === 'Bimestral';
 
-    const consumoMensualBase = isBimestral ? (consumoPeriodo / 2) : consumoPeriodo;
+    const consumoPromedioRecibo = Number(receipt?.consumoPromedioMensual || 0);
+    const consumoMensualBase = consumoPromedioRecibo > 0 ? consumoPromedioRecibo : (isBimestral ? (consumoPeriodo / 2) : consumoPeriodo);
     const ajusteKwhMes = Number(receipt?.ajusteConsumo?.kwhMes || 0);
     const consumoMensualManual = Number(o?.consumoMensual || 0);
     const consumoMensual = consumoMensualManual > 0 ? Math.max(0, consumoMensualManual) : Math.max(0, consumoMensualBase + ajusteKwhMes);
@@ -85,6 +88,8 @@ export function computeQuote(receipt, client, params, overrides) {
     const pagoActualPeriodo = Number(receipt?.totalAPagar || 0);
     const normalizaPagoMensual = (value) => isBimestral ? (Number(value || 0) / 2) : Number(value || 0);
     const pagoProm = (() => {
+        const pagoPromedioRecibo = Number(receipt?.pagoPromedioMensual || 0);
+        if (pagoPromedioRecibo > 0) return Math.max(0, pagoPromedioRecibo);
         const pagos = (receipt?.historial || []).map(x => Number(x.pago || 0)).filter(n => n > 0);
         const promedioPeriodo = pagos.length ? (pagos.reduce((a, b) => a + b, 0) / pagos.length) : pagoActualPeriodo;
         return Math.max(0, normalizaPagoMensual(promedioPeriodo));
@@ -145,232 +150,221 @@ export function computeQuote(receipt, client, params, overrides) {
 }
 
 export function buildExportHtml(quote) {
-    const r = quote.receipt;
-    const c = quote.client;
-    const periodoRaw = r?.periodo?.raw || '';
-    const fecha = new Date().toLocaleDateString('es-MX', {year: 'numeric', month: 'long', day: '2-digit'});
-
-    const instal = r?.instalacion || {};
-    const folio = (quote.id || '').replace(/</g, '') || '—';
-    const tarifa = r?.tarifa || quote?.selectedTariff?.label || '-';
-
-    const ajusteTxt = Number(quote.ajusteKwhMes || 0) !== 0
-            ? `${formatNumber(quote.ajusteKwhMes)} kWh/mes`
-            : '—';
-
-    const perdidasPct = Math.round(Number(quote.perdidasSombraPct || instal.perdidasSombraPct || 0) * 100);
-    const pagoConSolar = Math.max(0, Math.round(Number(quote.pagoProm || 0) - Number(quote.ahorroMensual || 0)));
-
-    const esc = (s) => String(s ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-
-    const insumos = Array.isArray(r?.insumos) ? r.insumos : [];
-    const showInsumos = insumos.length > 0;
-    const subtotalIns = Number(quote.subtotalInsumos || 0);
-    const impuestosIns = Number(quote.impuestosInsumos || 0);
-    const totalIns = Number(quote.totalInsumos || 0);
-    const ivaPct = Math.round((Number(quote.impuestosPct || r?.impuestosPct || 0.16) * 100) * 10) / 10;
+    const r = quote.receipt || {};
+    const c = quote.client || {};
     const prefs = loadUserPreferences();
-    const packageLabel = instal?.paqueteLabel || (instal?.paqueteSeleccionado
-            ? `Paquete ${String(instal.paqueteSeleccionado).charAt(0).toUpperCase()}${String(instal.paqueteSeleccionado).slice(1)}`
-            : 'Configuración personalizada');
-    const advisor = prefs?.company?.advisorName || 'Asesor SECOM';
-    const companyName = prefs?.company?.companyName || 'SECOM Energía Solar';
-    const companyEmail = prefs?.company?.companyEmail || c.email || '—';
-    const companyPhone = prefs?.company?.companyPhone || c.telefono || '—';
+    const fecha = new Date().toLocaleDateString('es-MX', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
+    const esc = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const instal = r.instalacion || {};
+    const insumos = Array.isArray(r.insumos) ? r.insumos : [];
+    const subtotal = Number(quote.subtotalInsumos || insumos.reduce((acc, it) => acc + Number(it.cantidad || 0) * Number(it.precio || 0), 0));
+    const ivaPct = Number(quote.impuestosPct ?? r.impuestosPct ?? 0.16);
+    const iva = Number(quote.impuestosInsumos || (subtotal * ivaPct));
+    const total = Number(quote.inversion || quote.totalInsumos || subtotal + iva);
+    const anticipo = Math.round(total * 0.70);
+    const finiquito = Math.round(total * 0.30);
+
+    const produccionDiariaWh = (Number(quote.produccionMensual || 0) / 30) * 1000;
+    const consumoDiarioWh = (Number(quote.consumoMensual || r.consumoPromedioMensual || 0) / 30) * 1000;
+    const cobertura = consumoDiarioWh > 0 ? Math.round((produccionDiariaWh / consumoDiarioWh) * 100) : 0;
+    const wattsInstalados = Number(quote.wattsInstalados || (Number(quote.kwp || 0) * 1000));
+    const areaPanel = Math.round(Number(quote.paneles || 0) * 3.8);
+    const packageLabel = instal.paqueteLabel || instal.paqueteSeleccionado || 'Configuración personalizada';
+    const prefCompanyName = String(prefs?.company?.companyName || '').trim();
+    const companyName = prefCompanyName && prefCompanyName !== 'SECOM Energía Solar' ? prefCompanyName : 'SOLUCIONES EN SEGURIDAD Y ENERGÍA';
+    const advisor = prefs?.company?.advisorName || 'ING. JOSÉ RAMÓN DÍAZ GAXIOLA';
+    const role = prefs?.company?.advisorRole || 'GERENTE OPERATIVO';
+    const tarifa = r.tarifa || quote?.selectedTariff?.label || '—';
+    const paneles = Number(quote.paneles || 0);
+    const retorno = Number(quote.retornoAnios || 0);
+    const ahorroMensual = Number(quote.ahorroMensual || 0);
+    const direccionEmpresa = 'Calle Coahuila # 2008-Local 2, Cortinas 3ra. Sección, C. P. 85169, Ciudad Obregón, Sonora.';
+
+    const lineTotal = (items) => items.reduce((acc, it) => acc + Math.max(0, Number(it.cantidad || 0)) * Math.max(0, Number(it.precio || 0)), 0);
+    const normalizeText = value => String(value || '').toLowerCase();
+    const by = (predicate) => insumos.filter(it => predicate({
+        codigo: String(it.codigo || '').toUpperCase(),
+        categoria: normalizeText(it.categoria),
+        descripcion: normalizeText(it.descripcion),
+        item: it,
+    }));
+
+    const panelItems = by(x => x.codigo.startsWith('PANEL') || x.categoria.includes('panel') || x.descripcion.includes('panel'));
+    const inverterItems = by(x => x.codigo.startsWith('INV') || x.categoria.includes('inversor') || x.descripcion.includes('inversor'));
+    const mountingItems = by(x => x.codigo.startsWith('EST') || x.categoria.includes('estructura') || x.categoria.includes('montaje') || x.descripcion.includes('estructura') || x.descripcion.includes('montaje'));
+    const laborItems = by(x => x.codigo.includes('MO') || x.categoria.includes('instalación') || x.categoria.includes('instalacion') || x.descripcion.includes('mano de obra'));
+    const usedCodes = new Set([...panelItems, ...inverterItems, ...mountingItems, ...laborItems].map(it => String(it.codigo || '').toUpperCase()));
+    const electricalItems = insumos.filter(it => !usedCodes.has(String(it.codigo || '').toUpperCase()));
+
+    const rows = [];
+    const pushRow = (descripcion, cantidad, unidad, totalLinea) => {
+        if (!totalLinea && !cantidad) return;
+        const index = rows.length + 1;
+        rows.push({
+            parte: `1.${index}0`,
+            descripcion,
+            cantidad: cantidad || 1,
+            unidad: unidad || 'LOTE',
+            total: totalLinea || 0,
+        });
+    };
+
+    if (panelItems.length) {
+        const qty = panelItems.reduce((acc, it) => acc + Number(it.cantidad || 0), 0) || paneles || 1;
+        const desc = panelItems[0]?.descripcion || `Módulo solar ${quote.panelWatts || 550} W monocristalino`;
+        pushRow(desc, qty, panelItems[0]?.unidad || 'LOTE', lineTotal(panelItems));
+    }
+    if (inverterItems.length) {
+        pushRow(inverterItems[0]?.descripcion || 'Inversor para interconexión a CFE con salida 220 Vca, módulo WiFi incluido', inverterItems.length, 'LOTE', lineTotal(inverterItems));
+    }
+    if (mountingItems.length) {
+        pushRow('Montaje extra largo de aluminio anodizado para techo o piso de concreto, de alta resistencia a climas extremos y rápida instalación para arreglo de módulos fotovoltaicos.', 1, 'LOTE', lineTotal(mountingItems));
+    }
+    if (electricalItems.length) {
+        pushRow('Suministro e instalación de material eléctrico de acuerdo con la NOM-001-SEDE vigente. Incluye canalización, protecciones, cableado, sistema de protecciones lado corriente alterna y lado corriente directa.', 1, 'LOTE', lineTotal(electricalItems));
+    }
+    if (laborItems.length) {
+        pushRow('Servicio de mano de obra calificada. Técnicos con constancias para trabajos eléctricos y trabajos en alturas, certificación, ingeniería especializada, logística, fletes, maniobras, acarreos y limpieza en general.', 1, 'LOTE', lineTotal(laborItems));
+    }
+    if (!rows.length) {
+        pushRow(`Sistema fotovoltaico de ${formatNumber(paneles || 0)} paneles solares, inversor, protecciones, montaje e instalación.`, 1, 'LOTE', subtotal || total);
+    }
+    const rowsSubtotal = rows.reduce((acc, row) => acc + Number(row.total || 0), 0);
+    const diff = subtotal - rowsSubtotal;
+    if (Math.abs(diff) >= 1 && rows.length < 5) {
+        pushRow('Accesorios, materiales complementarios, ajustes de instalación y preparación para interconexión.', 1, 'LOTE', diff);
+    }
+    const tableRows = rows.slice(0, 5);
+
+    const ahorroAnual = Math.max(0, ahorroMensual * 12);
+    const chartW = 760;
+    const chartH = 118;
+    const left = 42;
+    const right = 12;
+    const top = 12;
+    const bottom = 28;
+    const plotW = chartW - left - right;
+    const plotH = chartH - top - bottom;
+    const years = Array.from({length: 25}, (_, i) => i + 1);
+    const maxAhorro = Math.max(total, ahorroAnual * 25, 1);
+    const scaleY = v => top + plotH - (Math.max(0, v) / maxAhorro) * plotH;
+    const scaleX = i => left + (i / 24) * plotW;
+    const ahorroPoints = years.map((y, i) => `${scaleX(i).toFixed(1)},${scaleY(ahorroAnual * y).toFixed(1)}`).join(' ');
+    const inversionPoints = years.map((_, i) => `${scaleX(i).toFixed(1)},${scaleY(total).toFixed(1)}`).join(' ');
+    const gridLines = Array.from({length: 7}, (_, i) => {
+        const y = top + (plotH / 6) * i;
+        const val = Math.round((maxAhorro * (6 - i)) / 6 / 1000);
+        return `<line x1="${left}" y1="${y.toFixed(1)}" x2="${chartW - right}" y2="${y.toFixed(1)}"/><text x="${left - 7}" y="${(y + 3).toFixed(1)}" text-anchor="end">$${val}</text>`;
+    }).join('');
+    const xTicks = years.map((y, i) => `<text x="${scaleX(i).toFixed(1)}" y="${chartH - 8}" text-anchor="middle">${y}</text>`).join('');
+    const chartSvg = `
+        <svg class="secom-export-chart" viewBox="0 0 ${chartW} ${chartH}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ahorro acumulado e inversión">
+            <g class="grid">${gridLines}</g>
+            <line class="axis" x1="${left}" y1="${top + plotH}" x2="${chartW - right}" y2="${top + plotH}"/>
+            <line class="axis" x1="${left}" y1="${top}" x2="${left}" y2="${top + plotH}"/>
+            <polyline class="saving" points="${ahorroPoints}"/>
+            <polyline class="investment" points="${inversionPoints}"/>
+            <g class="ticks">${xTicks}</g>
+            <text class="axis-title" x="10" y="${top + 50}" transform="rotate(-90 10 ${top + 50})">MM de Pesos</text>
+        </svg>`;
+
+    const materialElectrico = 'Suministro e instalación de material eléctrico de acuerdo con la NOM-001-SEDE vigente. Incluye canalización, protecciones, cableado, sistema de protecciones lado corriente alterna y lado corriente directa.';
+    const garantia = 'Garantía: 12 años en módulos, 12 años en inversores y 1 año en instalación eléctrica.';
+    const nota = `Nota: Esta cotización es aproximada conforme a los datos proporcionados por el cliente y no constituye ningún compromiso hasta la firma del contrato. Su inversión total será de ${formatCurrencyMXN(total)}. La recuperación estimada de inversión es de ${retorno ? `${formatNumber(retorno)} años` : '—'}, considerando un ahorro mensual estimado de ${formatCurrencyMXN(ahorroMensual)}.`;
 
     return `
-    <div class="export-doc export-doc--formal" id="exportDoc">
+    <div class="export-doc export-doc--secom-template" id="exportDoc">
+        <header class="secom-template-header">
+            <div class="secom-template-logo"><img src="assets/logo.png" alt="SECOM" /></div>
+            <div class="secom-template-title">
+                <h1>${esc(companyName)}</h1>
+                <div class="secom-template-client">
+                    <div><span>Datos del cliente</span></div>
+                    <div><b>Nombre</b> ${esc(c.nombre || r.nombre || '—')}</div>
+                    <div><b>Dirección</b> ${esc(c.direccion || r.direccion || '—')}</div>
+                    <div><b>Número de Servicio (RPU):</b> ${esc(r.servicio || '—')}</div>
+                    <div><b>Tarifa:</b> ${esc(tarifa)}</div>
+                </div>
+            </div>
+            <div class="secom-template-date">${esc(fecha)}</div>
+        </header>
 
-      <div class="export-doc__band">
-        <div class="export-doc__brand2">
-          <img class="export-doc__logo2" src="assets/logo.png" alt="SECOM" />
-          <div>
-            <div class="export-doc__title">Cotización de Sistema Solar Fotovoltaico</div>
-            <div class="export-doc__subtitle">Propuesta técnico-económica</div>
-          </div>
-        </div>
-        <div class="export-doc__folio">
-          <div class="export-doc__folioLabel">Folio</div>
-          <div class="export-doc__folioValue">${folio}</div>
-          <div class="export-doc__folioMeta">Fecha: ${fecha}</div>
-        </div>
-      </div>
+        <section class="secom-template-kpis">
+            <div><b>Producción diaria de energía</b> <span>${formatNumber(produccionDiariaWh)}</span></div>
+            <div><b>% Producción vs Consumo</b> <span>${formatNumber(cobertura)}%</span></div>
+            <div><b>Consumo promedio diario de energía</b> <span>${formatNumber(consumoDiarioWh)}</span></div>
+            <div><b>Watts instalados</b> <span>${formatNumber(wattsInstalados)}</span></div>
+        </section>
 
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Datos generales</div>
-
-        <div class="export-doc__grid2">
-          <div class="export-doc__box2">
-            <div class="export-doc__label2">Cliente</div>
-            <div class="export-doc__value2">${esc(c.nombre || r.nombre || '-')}</div>
-            <div class="export-doc__meta2">${esc(c.telefono || '-')} · ${esc(c.email || '-')}</div>
-            <div class="export-doc__meta2">${esc(c.direccion || r.direccion || '-')}</div>
-          </div>
-          <div class="export-doc__box2">
-            <div class="export-doc__label2">Suministro</div>
-            <div class="export-doc__row2"><span>No. de servicio</span><b>${esc(r.servicio || '-')}</b></div>
-            <div class="export-doc__row2"><span>Tarifa</span><b>${esc(tarifa)}</b></div>
-            <div class="export-doc__row2"><span>Periodo</span><b>${esc(periodoRaw || '-')}</b></div>
-            <div class="export-doc__row2"><span>Titular del recibo</span><b>${esc(r.nombre || '-')}</b></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Resumen ejecutivo</div>
-        <div class="export-doc__kpis">
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Potencia instalada</div>
-            <div class="export-doc__kpiValue">${Number(quote.kwp || 0).toFixed(2)} kWp</div>
-          </div>
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Paneles</div>
-            <div class="export-doc__kpiValue">${formatNumber(quote.paneles || 0)} × ${formatNumber(Number(quote.panelWatts || quote.params?.panelWatts || 0))} W</div>
-          </div>
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Generación anual estimada</div>
-            <div class="export-doc__kpiValue">${formatNumber(quote.produccionAnual || 0)} kWh/año</div>
-          </div>
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Inversión total</div>
-            <div class="export-doc__kpiValue">${formatCurrencyMXN(quote.inversion || 0)}</div>
-          </div>
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Ahorro mensual estimado</div>
-            <div class="export-doc__kpiValue">${formatCurrencyMXN(quote.ahorroMensual || 0)}</div>
-          </div>
-          <div class="export-doc__kpi">
-            <div class="export-doc__kpiLabel">Retorno estimado</div>
-            <div class="export-doc__kpiValue">${quote.retornoAnios ? `${quote.retornoAnios} años` : '—'}</div>
-          </div>
-        </div>
-
-        <div class="export-doc__mini">
-          <div class="export-doc__miniRow">
-            <span>Consumo mensual usado</span>
-            <b>${formatNumber(quote.consumoMensual || 0)} kWh/mes</b>
-          </div>
-          <div class="export-doc__miniRow">
-            <span>Ajuste de consumo</span>
-            <b>${ajusteTxt}</b>
-          </div>
-          <div class="export-doc__miniRow">
-            <span>Pago promedio CFE</span>
-            <b>${formatCurrencyMXN(quote.pagoProm || 0)}</b>
-          </div>
-          <div class="export-doc__miniRow">
-            <span>Pago estimado con solar</span>
-            <b>${formatCurrencyMXN(pagoConSolar)}</b>
-          </div>
-        </div>
-      </div>
-
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Consumo vs. producción estimada</div>
-        <div class="export-doc__sectionHelp">Histórico del recibo (últimos 12 periodos) comparado con la producción mensual estimada del sistema.</div>
-        <div class="export-doc__chart">
-          <canvas id="exportChart" height="160"></canvas>
-        </div>
-      </div>
-
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Configuración del sistema propuesto</div>
-        <div class="export-doc__grid2">
-          <div class="export-doc__box2">
-            <div class="export-doc__label2">Componentes</div>
-            <div class="export-doc__row2"><span>Modelo de panel</span><b>${esc(instal.panelModelo || '—')}</b></div>
-            <div class="export-doc__row2"><span>Dimensiones del panel</span><b>${esc(instal.panelDimensiones || '—')}</b></div>
-            <div class="export-doc__row2"><span>Modelo de inversor</span><b>${esc(instal.inversorModelo || '—')}</b></div>
-            <div class="export-doc__row2"><span>Alcance comercial</span><b>${esc(packageLabel)}</b></div>
-          </div>
-          <div class="export-doc__box2">
-            <div class="export-doc__label2">Condiciones de instalación</div>
-            <div class="export-doc__row2"><span>Tipo de techo</span><b>${esc(instal.tipoTecho || '—')}</b></div>
-            <div class="export-doc__row2"><span>Sombras</span><b>${esc(instal.sombras || '—')} ${Number.isFinite(perdidasPct) ? `(${perdidasPct}%)` : ''}</b></div>
-            <div class="export-doc__row2"><span>Notas</span><b>${esc(instal.notasFisicas || '—')}</b></div>
-          </div>
-        </div>
-
-        <div class="export-doc__assumptions">
-          <div class="export-doc__assumpTitle">Supuestos de cálculo</div>
-          <div class="export-doc__assumpGrid">
-            <div><span>Producción promedio</span><b>${formatNumber(quote.yieldEfectivo || quote.params?.yieldKwhPerKwpMonth || 0)} kWh/kWp·mes</b></div>
-            <div><span>Costo por kWp</span><b>${formatCurrencyMXN(quote.costPerKwpEff || quote.params?.costPerKwp || 0)}</b></div>
-            <div><span>Contingencia</span><b>${Math.round((quote.params?.contingencyPct || 0) * 100)}%</b></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Alcance de la propuesta</div>
-        <div class="export-doc__sectionHelp">Resumen ejecutivo del suministro propuesto para facilitar revisión comercial y técnica.</div>
-        <div class="export-doc__assumpGrid">
-          <div><span>Dirección del suministro</span><b>${esc(r.direccion || c.direccion || '—')}</b></div>
-          <div><span>Cliente / titular</span><b>${esc(c.nombre || r.nombre || '—')} / ${esc(r.nombre || '—')}</b></div>
-          <div><span>Asesor responsable</span><b>${esc(advisor)}</b></div>
-          <div><span>Paneles considerados</span><b>${formatNumber(quote.paneles || 0)} unidades</b></div>
-          <div><span>Producción mensual esperada</span><b>${formatNumber(quote.produccionMensual || 0)} kWh/mes</b></div>
-          <div><span>Pago CFE posterior estimado</span><b>${formatCurrencyMXN(pagoConSolar)}</b></div>
-        </div>
-      </div>
-
-      ${showInsumos ? `
-      <div class="export-doc__section">
-        <div class="export-doc__sectionTitle">Desglose de insumos</div>
-        <div class="export-doc__sectionHelp">Detalle de materiales y servicios considerados en la propuesta.</div>
-
-        <div style="border:1px solid rgba(0,0,0,0.14); border-radius:12px; overflow:hidden">
-          <table style="width:100%; border-collapse:collapse; font-size:11px">
-            <thead>
-              <tr style="background:#f3f4f6">
-                <th style="text-align:left; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">CÓDIGO</th>
-                <th style="text-align:left; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">DESCRIPCIÓN</th>
-                <th style="text-align:right; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">CANTIDAD</th>
-                <th style="text-align:left; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">UNIDAD</th>
-                <th style="text-align:right; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">PRECIO</th>
-                <th style="text-align:right; padding:10px; border-bottom:1px solid rgba(0,0,0,0.10)">TOTAL</th>
-              </tr>
-            </thead>
+        <table class="secom-template-table">
+            <colgroup><col class="col-part"/><col class="col-desc"/><col class="col-qty"/><col class="col-unit"/></colgroup>
+            <thead><tr><th>Parte</th><th>Descripción</th><th>Cantidad</th><th>Unidad</th></tr></thead>
             <tbody>
-              ${insumos.map(it => {
-        const cant = Number(it?.cantidad || 0);
-        const precio = Number(it?.precio || 0);
-        const line = Math.round((Math.max(0, cant) * Math.max(0, precio)) * 100) / 100;
-        return `
-                  <tr>
-                    <td style="padding:10px; border-bottom:1px solid rgba(0,0,0,0.06)">${esc(it?.codigo || '')}</td>
-                    <td style="padding:10px; border-bottom:1px solid rgba(0,0,0,0.06)">${esc(it?.descripcion || '')}</td>
-                    <td style="padding:10px; text-align:right; border-bottom:1px solid rgba(0,0,0,0.06)">${formatNumber(cant)}</td>
-                    <td style="padding:10px; border-bottom:1px solid rgba(0,0,0,0.06)">${esc(it?.unidad || '')}</td>
-                    <td style="padding:10px; text-align:right; border-bottom:1px solid rgba(0,0,0,0.06)">${formatCurrencyMXN(precio)}</td>
-                    <td style="padding:10px; text-align:right; border-bottom:1px solid rgba(0,0,0,0.06)">${formatCurrencyMXN(line)}</td>
-                  </tr>
-                `;
-    }).join('')}
+                <tr class="system-row"><td></td><td>SISTEMA FOTOVOLTAICO</td><td></td><td></td></tr>
+                ${tableRows.map(row => `<tr>
+                    <td>${esc(row.parte)}</td>
+                    <td>${esc(row.descripcion)}</td>
+                    <td class="num">${formatNumber(row.cantidad)}</td>
+                    <td class="unit">${esc(row.unidad || 'LOTE')}</td>
+                </tr>`).join('')}
             </tbody>
-          </table>
-        </div>
+        </table>
 
-        <div style="display:flex; justify-content:flex-end; margin-top:10px">
-          <div style="min-width:280px; border:1px solid rgba(0,0,0,0.14); border-radius:12px; padding:10px">
-            <div style="display:flex; justify-content:space-between; gap:10px; font-size:12px"><span>Subtotal</span><b>${formatCurrencyMXN(subtotalIns)}</b></div>
-            <div style="display:flex; justify-content:space-between; gap:10px; font-size:12px; margin-top:6px"><span>Impuestos (IVA ${ivaPct}%)</span><b>${formatCurrencyMXN(impuestosIns)}</b></div>
-            <div style="display:flex; justify-content:space-between; gap:10px; font-size:13px; margin-top:8px"><span>Total</span><b>${formatCurrencyMXN(totalIns)}</b></div>
-          </div>
-        </div>
-      </div>
-      ` : ''}
+        <section class="secom-template-finance">
+            <div class="payment-title">Condiciones de pago<br/>al contado:</div>
+            <div class="payment-box">
+                <div><b>70% DE ANTICIPO:</b><span>${formatCurrencyMXN(anticipo)}</span></div>
+                <div><b>30% AL FINALIZAR:</b><span>${formatCurrencyMXN(finiquito)}</span></div>
+                <div class="total"><b>Total:</b><span>${formatCurrencyMXN(total)}</span></div>
+            </div>
+            <div class="investment-title">Su inversión total<br/>será de:</div>
+            <div class="investment-box">
+                <div><b>Pesos:</b><span>${formatCurrencyMXN(subtotal)}</span></div>
+                <div><b>IVA:</b><span>${formatCurrencyMXN(iva)}</span></div>
+                <div class="total"><b>Total:</b><span>${formatCurrencyMXN(total)}</span></div>
+            </div>
+            <div class="roi-box"><b>Recuperación de la<br/>Inversión</b><span>${retorno ? formatNumber(retorno) : '—'} Años</span></div>
+        </section>
 
-      <div class="export-doc__foot2">
-        <div><b>Vigencia:</b> 15 días naturales. <b>Observación:</b> La propuesta final está sujeta a verificación técnica en sitio, validación de ingeniería y disponibilidad de equipo.</div>
-        <div class="export-doc__footMeta">${companyName} · Asesor: ${advisor} · Contacto: ${companyPhone} · ${companyEmail}</div>
-      </div>
+        <section class="secom-template-chart-wrap">
+            ${chartSvg}
+            <div class="chart-legend"><span class="green"></span>Ahorro Acumulado <span class="blue"></span>Inversión</div>
+            <div class="panel-warranty">Los paneles cuentan con 25 años de garantía de rendimiento lineal</div>
+        </section>
 
-    </div>
-  `;
+        <section class="secom-template-install">
+            <div class="bar"><b>Material de Instalación Paneles</b><span>Área Aproximada de instalación</span></div>
+            <div class="row"><b>Accesorios en Aluminio Anodizado</b><span>${formatNumber(areaPanel)} m2</span></div>
+            <div class="bar"><b>Instalación Eléctrica</b></div>
+            <div class="row">De acuerdo a las normas eléctricas de CFE</div>
+            <div class="bar"><b>Sistema de Fijación de Paneles</b></div>
+            <div class="row">Fijación en techo o piso con protección de pasta epóxica a prueba de filtrado de agua</div>
+        </section>
+
+        <section class="secom-template-notes">
+            <p><b>Tiempo estimado de entrega:</b> de 1 a 2 semanas</p>
+            <p><b>Tiempo estimado de instalación:</b> Varía de acuerdo a dimensión del sistema</p>
+            <p><b>${esc(garantia)}</b></p>
+            <p><b>${esc(nota)}</b></p>
+            <p>Tiene vigencia de 05 días a partir de la fecha establecida en esta cotización. Los trámites administrativos ante la CFE no tienen costo. Las cuotas extras de la dependencia de CFE no están incluidos en esta cotización. Los trabajos, materiales o viáticos no mencionados, serán cotizados de acuerdo a las instalaciones.</p>
+            <p class="tax">LA LEY DE IMPUESTO SOBRE LA RENTA, ARTÍCULO 40 - 12 SECCIÓN 2, MARCA QUE LOS PORCENTAJES MÁXIMOS AUTORIZADOS TRATÁNDOSE DE ACTIVOS FIJOS POR TIPO DE BIEN, ENERGÍAS ALTERNATIVAS (SOLAR) PODRÁN SER DEDUCIDAS AL 100%</p>
+        </section>
+
+        <footer class="secom-template-footer">
+            <div class="footer-address">${esc(direccionEmpresa)}</div>
+            <div class="signature">
+                <div>ATENTAMENTE</div>
+                <span></span>
+                <b>${esc(advisor)}</b>
+                <small>${esc(role)}</small>
+            </div>
+            <div class="cert-badge"><b>INSTALADOR<br/>SECOM</b><span>ENERGÍA SOLAR</span></div>
+        </footer>
+    </div>`;
 }

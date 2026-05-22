@@ -598,6 +598,63 @@ function parseHistoricalTable(text) {
     return rows;
 }
 
+
+function parseHistoricalPeriodDays(periodo = '') {
+    const m = normalizeUpper(periodo).match(/(?:DEL\s+)?(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s+(\d{2})\s+(?:AL\s+)?(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s+(\d{2})/);
+    if (!m) return 30;
+    const start = new Date(2000 + parseIntSafe(m[3]), (MONTHS[m[2]] || 1) - 1, parseIntSafe(m[1]));
+    const end = new Date(2000 + parseIntSafe(m[6]), (MONTHS[m[5]] || 1) - 1, parseIntSafe(m[4]));
+    const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
+    return Number.isFinite(days) && days > 0 ? days : 30;
+}
+
+function buildMonthlyAverages({consumoPeriodo = 0, total = 0, periodo = {}, tipoPeriodo = 'Mensual', historial = []} = {}) {
+    const consumosMensuales = [];
+    const pagosMensuales = [];
+    const consumosPeriodo = [];
+    const pagosPeriodo = [];
+    const currentIsBimestral = tipoPeriodo === 'Bimestral' || Number(periodo?.days || 0) >= 45;
+
+    const consumoActual = Number(consumoPeriodo || 0);
+    const pagoActual = Number(total || 0);
+    if (consumoActual > 0) {
+        consumosPeriodo.push(consumoActual);
+        consumosMensuales.push(currentIsBimestral ? consumoActual / 2 : consumoActual);
+    }
+    if (pagoActual > 0) {
+        pagosPeriodo.push(pagoActual);
+        pagosMensuales.push(currentIsBimestral ? pagoActual / 2 : pagoActual);
+    }
+
+    (historial || []).forEach(row => {
+        const days = parseHistoricalPeriodDays(row?.periodo || '');
+        const isBimestral = days >= 45;
+        const kwh = Number(row?.kwh || 0);
+        const pago = Number(row?.pago || row?.importe || 0);
+        if (kwh > 0) {
+            consumosPeriodo.push(kwh);
+            consumosMensuales.push(isBimestral ? kwh / 2 : kwh);
+        }
+        if (pago > 0) {
+            pagosPeriodo.push(pago);
+            pagosMensuales.push(isBimestral ? pago / 2 : pago);
+        }
+    });
+
+    const sum = arr => arr.reduce((a, b) => a + b, 0);
+    const avg = arr => arr.length ? sum(arr) / arr.length : 0;
+    const round2 = value => Math.round(Number(value || 0) * 100) / 100;
+
+    return {
+        consumoPromedioMensual: round2(avg(consumosMensuales)),
+        pagoPromedioMensual: round2(avg(pagosMensuales)),
+        totalConsumoHistorico: round2(sum(consumosPeriodo)),
+        totalPagoHistorico: round2(sum(pagosPeriodo)),
+        consumoMaximoHistorico: round2(consumosPeriodo.length ? Math.max(...consumosPeriodo) : 0),
+        periodosPromediados: Math.max(consumosMensuales.length, pagosMensuales.length),
+    };
+}
+
 function chooseBestText(primary, secondary) {
     const p = normalizeText(primary);
     const s = normalizeText(secondary);
@@ -688,13 +745,11 @@ function parseCfeReceiptTextFromPages(page1Text, page2Text, mergedText) {
     const limitePago = parseLimitePago(bestPage1 || fullText);
     const corteAPartir = parseCorte(bestPage1 || fullText);
 
-    const pagosHist = historial.map(x => Number(x.pago || 0)).filter(n => n > 0);
-    const pagoProm = pagosHist.length
-            ? pagosHist.reduce((a, b) => a + b, 0) / pagosHist.length
-            : total;
+    const tipoPeriodo = (periodo?.days ?? 0) >= 45 ? 'Bimestral' : 'Mensual';
+    const monthly = buildMonthlyAverages({consumoPeriodo, total, periodo, tipoPeriodo, historial});
+    const pagoProm = monthly.pagoPromedioMensual || total;
 
     const ahorroEstimado = Math.max(0, pagoProm - costoBase);
-    const tipoPeriodo = (periodo?.days ?? 0) >= 45 ? 'Bimestral' : 'Mensual';
     const estado = parseEstadoFromDireccion(direccion);
 
     return {
@@ -707,6 +762,12 @@ function parseCfeReceiptTextFromPages(page1Text, page2Text, mergedText) {
         nombre: nombre || '',
         direccion: direccion || '',
         consumoPeriodo: consumoPeriodo || 0,
+        consumoPromedioMensual: monthly.consumoPromedioMensual || 0,
+        pagoPromedioMensual: monthly.pagoPromedioMensual || 0,
+        totalConsumoHistorico: monthly.totalConsumoHistorico || 0,
+        totalPagoHistorico: monthly.totalPagoHistorico || 0,
+        consumoMaximoHistorico: monthly.consumoMaximoHistorico || 0,
+        periodosPromediados: monthly.periodosPromediados || 0,
         historial,
         suministro,
         iva,
