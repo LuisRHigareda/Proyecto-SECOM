@@ -82,23 +82,31 @@ export function computeQuote(receipt, client, params, overrides) {
     const inversionBase = kwpFinal * costPerKwpEff;
     let inversion = Math.round(inversionBase * (1 + p.contingencyPct));
 
-    // Ahorro estimado mensual. Para recibos bimestrales se normaliza el pago a mes.
-    // Si el recibo incluye ahorro estimado extraído de la plantilla original, se respeta;
-    // de lo contrario, se estima con la cobertura energética del sistema, sin exceder el pago mensual actual.
+    // Ahorro estimado mensual. Para calcular retorno se usa un pago mensual realista:
+    // 1) promedio mensual ya extraído del recibo, o 2) historial + recibo actual normalizados a mes.
     const pagoActualPeriodo = Number(receipt?.totalAPagar || 0);
     const normalizaPagoMensual = (value) => isBimestral ? (Number(value || 0) / 2) : Number(value || 0);
     const pagoProm = (() => {
         const pagoPromedioRecibo = Number(receipt?.pagoPromedioMensual || 0);
         if (pagoPromedioRecibo > 0) return Math.max(0, pagoPromedioRecibo);
-        const pagos = (receipt?.historial || []).map(x => Number(x.pago || 0)).filter(n => n > 0);
-        const promedioPeriodo = pagos.length ? (pagos.reduce((a, b) => a + b, 0) / pagos.length) : pagoActualPeriodo;
-        return Math.max(0, normalizaPagoMensual(promedioPeriodo));
+
+        const pagosHistoricos = (Array.isArray(receipt?.historial) ? receipt.historial : [])
+            .map(x => Number(x?.pago || x?.importe || 0))
+            .filter(n => Number.isFinite(n) && n > 0)
+            .map(normalizaPagoMensual);
+
+        const pagosMensuales = pagoActualPeriodo > 0
+            ? [...pagosHistoricos, normalizaPagoMensual(pagoActualPeriodo)]
+            : pagosHistoricos;
+
+        if (!pagosMensuales.length) return 0;
+        return Math.max(0, pagosMensuales.reduce((a, b) => a + b, 0) / pagosMensuales.length);
     })();
 
     const coberturaDisenio = consumoMensual > 0 ? clamp((kwpFinal * yieldEfectivo) / consumoMensual, 0, 1) : 0;
     const ahorroRecibo = Math.max(0, Number(receipt?.ahorroEstimado || 0));
     const ahorroMensualEstimado = ahorroRecibo > 0
-        ? Math.min(pagoProm || ahorroRecibo, isBimestral ? ahorroRecibo : ahorroRecibo)
+        ? Math.min(pagoProm || ahorroRecibo, normalizaPagoMensual(ahorroRecibo))
         : Math.max(0, pagoProm * coberturaDisenio);
 
     // Si existe un desglose de insumos con precios, se usa como total de inversión

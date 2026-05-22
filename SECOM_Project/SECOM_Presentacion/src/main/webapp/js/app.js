@@ -5900,7 +5900,16 @@ function secomV3CurrentQuote() {
     const hasSelectedInsumos = totals.total > 0;
 
     const pagoMensual = Number(base.pagoProm || 0);
-    const coberturaFinanciera = coverage == null ? 1 : Math.max(0, Math.min(1, coverage / 100));
+    const coberturaSeleccionada = coverage == null ? 0 : Math.max(0, Math.min(1, coverage / 100));
+    const coberturaBase = consumoMensual > 0
+        ? Math.max(0, Math.min(1, Number(base.produccionMensual || 0) / consumoMensual))
+        : 0;
+    // Cuando se agregan insumos/productos, el retorno se estima contra el sistema completo recomendado,
+    // no contra una partida aislada del catálogo. Así se evita que el retorno se dispare cuando se elige
+    // un modelo de panel o un insumo sin capturar manualmente toda la cantidad sugerida de paneles.
+    const coberturaFinanciera = hasSelectedInsumos
+        ? Math.max(coberturaSeleccionada, coberturaBase)
+        : (coverage == null ? coberturaBase || 1 : coberturaSeleccionada);
     const ahorroCalculado = pagoMensual > 0 ? pagoMensual * coberturaFinanciera : Number(base.ahorroMensual || 0);
     const ahorroMensual = Math.round(Math.max(0, Math.min(pagoMensual || ahorroCalculado, ahorroCalculado)));
 
